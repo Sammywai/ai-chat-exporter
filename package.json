@@ -1,0 +1,22 @@
+{
+  "name": "ai-chat-exporter",
+  "version": "0.1.0",
+  "description": "Local-first Chrome extension for exporting AI conversations to PDF or Markdown.",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/bundle-pdf.mjs && node scripts/copy-static.mjs",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.624"
+  }
+}

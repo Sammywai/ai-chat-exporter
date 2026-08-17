@@ -1,0 +1,26 @@
+# Dependencies and generated builds
+node_modules/
+dist/
+coverage/
+
+# Local QA and design artifacts
+output/
+preview/
+.playwright-mcp/
+.impeccable/
+TODO.md
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Editor, OS, and log files
+.DS_Store
+*.log
+.idea/
+.vscode/
