@@ -1,6 +1,6 @@
 {
   "name": "ai-chat-exporter",
-  "version": "0.1.0",
+  "version": "0.4.1",
   "description": "Local-first Chrome extension for exporting AI conversations to PDF or Markdown.",
   "private": true,
   "license": "SEE LICENSE IN LICENSE.md",

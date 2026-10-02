@@ -146,7 +146,7 @@ export async function extractChatGptConversation(): Promise<ConversationDraft | 
     if (scrollContainer && scrollContainer.scrollTop > 0) {
       const originalScrollTop = scrollContainer.scrollTop;
 
-      for (let step = 0; step < 80 && scrollContainer.scrollTop > 0; step += 1) {
+      for (let step = 0; step < 400 && scrollContainer.scrollTop > 0; step += 1) {
         scrollContainer.scrollTop = Math.max(0, scrollContainer.scrollTop - scrollContainer.clientHeight * 0.8);
         await new Promise<void>((resolve) => window.setTimeout(resolve, 180));
         captureVisibleMessages();

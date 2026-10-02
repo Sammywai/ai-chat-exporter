@@ -1,17 +1,28 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { getDocument as loadPdfDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 import { normalizePdfText, renderPdf } from "../dist/renderers/pdf.js";
 
-const notoFont = await readFile(
-  new URL("../static/assets/NotoSansSC.ttf", import.meta.url)
-);
+const getDocument = (options) => loadPdfDocument({
+  standardFontDataUrl: new URL("../node_modules/pdfjs-dist/standard_fonts/", import.meta.url).pathname,
+  ...options
+});
+
+const bundledFonts = new Map(await Promise.all(
+  ["Inter-Regular.ttf", "Inter-Bold.ttf", "NotoSansSC.ttf"].map(async (filename) => [
+    `assets/${filename}`,
+    await readFile(new URL(`../static/assets/${filename}`, import.meta.url))
+  ])
+));
+let unicodeFontRequests = 0;
 globalThis.chrome = {
   runtime: {
-    getURL() {
-      return `data:font/otf;base64,${notoFont.toString("base64")}`;
+    getURL(path) {
+      assert.ok(bundledFonts.has(path), `Unexpected external PDF font: ${path}`);
+      if (path === "assets/NotoSansSC.ttf") unicodeFontRequests += 1;
+      return `data:font/ttf;base64,${bundledFonts.get(path).toString("base64")}`;
     }
   }
 };
@@ -36,6 +47,87 @@ test("renders a normalized ChatGPT conversation as a PDF document", async () => 
 
   assert.equal(new TextDecoder().decode(pdf.slice(0, 5)), "%PDF-");
   assert.ok(pdf.length > 500);
+});
+
+test("embeds local Inter regular and bold without loading the large Unicode fallback", async () => {
+  const beforeRequests = unicodeFontRequests;
+  const pdf = await renderPdf({
+    provider: "chatgpt",
+    title: "Readable transcript",
+    messages: [
+      { id: "user", role: "user", blocks: [{ type: "paragraph", text: "Export our complete conversation." }] },
+      { id: "assistant", role: "assistant", blocks: [
+        { type: "heading", level: 2, text: "Clear headings" },
+        { type: "paragraph", text: "Keep **important text** readable — including smart quotes and café. office efficient affinity" },
+        { type: "code", language: "js", code: "const exported = true;" }
+      ] }
+    ]
+  });
+  assert.equal(unicodeFontRequests, beforeRequests);
+  assert.ok(pdf.length > 100_000 && pdf.length < 600_000,
+    `Expected complete Inter fonts without the large Unicode fallback: ${pdf.length} bytes`);
+
+  const document = await getDocument({ data: pdf.slice() }).promise;
+  const page = await document.getPage(1);
+  const content = await page.getTextContent();
+  const text = content.items.map((item) => item.str).join(" ");
+  assert.match(text, /important text/);
+  assert.equal((text.match(/important text/g) ?? []).length, 1, "bold text must not be duplicated in extraction");
+  assert.match(text, /smart quotes and café/);
+  assert.match(text, /office efficient affinity/);
+  await page.getOperatorList();
+  const fontName = (value) => page.commonObjs.get(content.items.find((item) => item.str.includes(value)).fontName).name;
+  assert.match(fontName("smart quotes"), /Inter-Regular/);
+  assert.match(fontName("important text"), /Inter-Bold/);
+  assert.match(fontName("exported ="), /Courier/);
+  await document.destroy();
+});
+
+test("uses Inter for supported Greek and Cyrillic text with intact character sequences", async () => {
+  const beforeRequests = unicodeFontRequests;
+  const sample = "Ελληνικά — Привет — café — naïve";
+  const pdf = await renderPdf({
+    provider: "chatgpt",
+    title: "Multilingual typography",
+    messages: [{ id: "answer", role: "assistant", blocks: [{ type: "paragraph", text: sample }] }]
+  });
+  assert.equal(unicodeFontRequests, beforeRequests);
+  const document = await getDocument({ data: pdf.slice() }).promise;
+  const page = await document.getPage(1);
+  const content = await page.getTextContent();
+  assert.ok(content.items.some((item) => item.str === sample));
+  await document.destroy();
+});
+
+test("reference layout uses quiet title, right user bubble, and plain assistant text", async () => {
+  const pdf = await renderPdf({
+    provider: "chatgpt",
+    title: "Simple conversation",
+    messages: [
+      { id: "user", role: "user", blocks: [
+        { type: "paragraph", text: "My question" },
+        { type: "paragraph", text: "Another paragraph" }
+      ] },
+      { id: "assistant", role: "assistant", blocks: [
+        { type: "heading", level: 2, text: "Readable heading" },
+        { type: "paragraph", text: "Assistant answer" }
+      ] }
+    ]
+  }, { template: "reference", themeMode: "dark" });
+  const document = await getDocument({ data: pdf.slice() }).promise;
+  const page = await document.getPage(1);
+  const content = await page.getTextContent();
+  const items = content.items.filter((item) => "str" in item);
+  const text = items.map((item) => item.str).join(" ");
+  assert.doesNotMatch(text, /AI CHAT EXPORTER|Exported with|Exported locally|CONTINUED|YOU|ChatGPT/);
+  assert.match(text, /Simple conversation/);
+  assert.match(text, /1 \/ 1/);
+  const x = (label) => items.find((item) => item.str === label)?.transform[4];
+  assert.equal(x("Assistant answer"), 36);
+  assert.equal(x("Readable heading"), 36);
+  assert.ok(x("My question") > x("Assistant answer") + 200);
+  assert.equal(x("My question"), x("Another paragraph"));
+  await document.destroy();
 });
 
 test("renders the reference chat template with curated appearance options", async () => {
@@ -265,7 +357,8 @@ test("converts unsupported rating and ranking emoji into readable PDF text", () 
   );
 });
 
-test("embeds a Unicode font for Chinese conversation content", async () => {
+test("embeds the reliable Unicode font and renders Chinese conversation content", async () => {
+  const chinese = "先使用蓬松洗发水，再搭配轻盈的造型产品。";
   const pdf = await renderPdf({
     provider: "chatgpt",
     title: "中文对话测试",
@@ -273,13 +366,27 @@ test("embeds a Unicode font for Chinese conversation content", async () => {
       {
         id: "a-1",
         role: "assistant",
-        blocks: [{ type: "paragraph", text: "先使用蓬松洗发水，再搭配轻盈的造型产品。" }]
+        blocks: [
+          { type: "paragraph", text: chinese },
+          { type: "paragraph", text: "Mixed-script text remains readable." },
+          { type: "code", language: "python", code: 'print("中文")' }
+        ]
       }
     ]
   });
 
   assert.equal(new TextDecoder().decode(pdf.slice(0, 5)), "%PDF-");
-  assert.ok(pdf.length > 1_000_000);
+  // The bundled font's subset appears searchable but drops glyphs visually.
+  // A full embedded font is deliberately larger until a replacement passes raster QA.
+  assert.ok(pdf.length > 100_000, "full font embedding must not regress to broken tiny subsets");
+
+  const doc = await getDocument({ data: pdf.slice(), disableWorker: true }).promise;
+  const page = await doc.getPage(1);
+  const text = await page.getTextContent();
+  assert.match(text.items.map((item) => item.str).join(""), /先使用蓬松洗发水/);
+  assert.match(text.items.map((item) => item.str).join(""), /Mixed-script text remains readable/);
+  assert.match(text.items.map((item) => item.str).join(""), /print\("中文"\)/);
+  await doc.destroy();
 });
 
 test("paginates long paragraphs, code, and table rows without clipping or content loss", async () => {
@@ -299,7 +406,9 @@ test("paginates long paragraphs, code, and table rows without clipping or conten
         id: "a-long",
         role: "assistant",
         blocks: [
-          { type: "paragraph", text: paragraphMarkers.map((marker) => `${marker} readable content.`).join(" ") },
+          { type: "paragraph", text: paragraphMarkers.map((marker, index) => index % 3 === 0
+            ? `**${marker} readable content.**`
+            : `${marker} readable content.`).join(" ") },
           { type: "code", language: "text", code: codeMarkers.map((marker) => `${marker} = preserved`).join("\n") },
           {
             type: "table",
@@ -314,18 +423,19 @@ test("paginates long paragraphs, code, and table rows without clipping or conten
   const document = await getDocument({ data: pdf.slice(), disableWorker: true }).promise;
   assert.ok(document.numPages >= 4);
   let extracted = "";
-  let continuationCount = 0;
   let tableHeaderCount = 0;
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
     const page = await document.getPage(pageNumber);
     const textContent = await page.getTextContent();
     const pageText = textContent.items.map((item) => item.str).join(" ");
     extracted += ` ${pageText}`;
-    continuationCount += (pageText.match(/CONTINUED/g) ?? []).length;
+    assert.doesNotMatch(pageText, /AI CHAT EXPORTER|CONTINUED/);
     tableHeaderCount += (pageText.match(/Required context/g) ?? []).length;
     for (const item of textContent.items) {
       const y = item.transform[5];
       assert.ok(y >= 0 && y <= page.view[3], `text y=${y} outside page ${pageNumber}`);
+      assert.ok(item.transform[4] + item.width <= page.view[2] - 35,
+        `text exceeds right margin on page ${pageNumber}: ${item.str}`);
     }
   }
   await document.destroy();
@@ -333,6 +443,5 @@ test("paginates long paragraphs, code, and table rows without clipping or conten
   for (const marker of [...paragraphMarkers, ...codeMarkers, ...tableMarkers]) {
     assert.match(extracted, new RegExp(marker), `${marker} silently lost`);
   }
-  assert.ok(continuationCount >= document.numPages - 2, "role context should repeat after content page breaks");
   assert.ok(tableHeaderCount >= 2, "table header context should repeat after a table page break");
 });

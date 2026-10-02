@@ -11,8 +11,8 @@ export type MessageRole = "user" | "assistant" | "system";
 
 export type MessageBlock =
   | { type: "heading"; level: number; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "table"; headers: string[]; rows: string[][] }
+  | { type: "paragraph"; text: string; inlineFormat?: "markdown" }
+  | { type: "table"; headers: string[]; rows: string[][]; inlineFormat?: "markdown" }
   | { type: "code"; language?: string; code: string }
   | { type: "math"; tex: string; display: boolean }
   | { type: "image"; alt: string; sourceUrl: string };
@@ -32,13 +32,13 @@ export interface ConversationDraft {
 export interface Conversation extends ConversationDraft {}
 
 export const CONVERSATION_LIMITS = {
-  messages: 500,
-  blocksPerMessage: 100,
-  charactersPerBlock: 50_000,
-  totalCharacters: 500_000,
-  tableRows: 500,
-  tableColumns: 20,
-  tableCells: 5_000
+  messages: 10_000,
+  blocksPerMessage: 1_000,
+  charactersPerBlock: 1_000_000,
+  totalCharacters: 20_000_000,
+  tableRows: 10_000,
+  tableColumns: 50,
+  tableCells: 100_000
 } as const;
 
 export class ConversationLimitError extends Error {
@@ -136,6 +136,7 @@ function toPreviewBlock(block: MessageBlock): MessageBlock {
   if (block.type === "table") {
     return {
       type: "table",
+      ...(block.inlineFormat ? { inlineFormat: block.inlineFormat } : {}),
       headers: block.headers.slice(0, 6).map((cell) => truncate(cell, 500)),
       rows: block.rows.slice(0, 10).map((row) =>
         row.slice(0, 6).map((cell) => truncate(cell, 500))

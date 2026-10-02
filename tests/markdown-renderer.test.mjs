@@ -30,22 +30,22 @@ test("renders a normalized ChatGPT conversation as a readable Markdown transcrip
 test("keeps structured assistant blocks when rendering Markdown", () => {
   const markdown = renderMarkdown({
     provider: "chatgpt",
-    title: "VPS setup",
+    title: "Development setup",
     messages: [
       {
         id: "a-1",
         role: "assistant",
         blocks: [
-          { type: "heading", level: 2, text: "Install Hermes" },
-          { type: "paragraph", text: "Open PowerShell." },
-          { type: "code", language: "powershell", code: "hermes doctor" }
+          { type: "heading", level: 2, text: "Check Node.js" },
+          { type: "paragraph", text: "Open a terminal." },
+          { type: "code", language: "powershell", code: "node --version" }
         ]
       }
     ]
   });
 
-  assert.match(markdown, /### Install Hermes/);
-  assert.match(markdown, /```powershell\nhermes doctor\n```/);
+  assert.match(markdown, /### Check Node.js/);
+  assert.match(markdown, /```powershell\nnode --version\n```/);
 });
 
 test("uses each provider's display name in the transcript", () => {

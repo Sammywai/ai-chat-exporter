@@ -1,84 +1,87 @@
 # AI Chat Exporter
 
-AI Chat Exporter is a local-first Chrome extension that exports conversations from popular AI chat sites to polished PDF or Markdown files.
+Keep AI conversations as readable PDF or Markdown files. One familiar ChatGPT-style layout, in light or dark. Everything runs on your device.
 
-Many tools in this space sit behind subscriptions or paid plans. This project was built as a free-to-use, source-available alternative for personal, educational, and other noncommercial use. Conversation content stays in the browser and is not sent to a project server.
+<img src="docs/images/export-panel.png" alt="AI Chat Exporter: same-page side panel with format and appearance controls" width="360">
 
-> Status: portfolio project and early release. Site layout changes can temporarily break individual provider adapters.
+[Dark transcript sample](docs/images/transcript-dark.png) · [Light transcript sample](docs/images/transcript-light.png). Demo content is synthetic.
 
-## Features
+**v0.4.1 beta.** Export controls stay beside your chat in Chrome's side panel. Capture and recovery are tested against synthetic browser fixtures, including newer ChatGPT message markers and delayed loading. See [verification](docs/VERIFICATION.md) for the separate live ChatGPT check and remaining provider qualification.
 
-- Export to PDF or Markdown.
-- Support for ChatGPT, Claude, DeepSeek, Gemini, Microsoft Copilot, Perplexity, and Grok.
-- Preserve speaker roles, headings, emphasis, tables, code, and useful reading structure.
-- Choose PDF templates, text size, spacing, and accessible color presets.
-- Preview PDF appearance before export.
-- Process conversations locally without analytics, accounts, or a remote export API.
+## What it does
 
-## Privacy and permissions
+- Right-aligned user bubbles, plain assistant answers, bold headings, readable tables and code.
+- PDF or Markdown, with only Light/Dark appearance controls.
+- One panel alongside the current chat, with an optional appearance preview. Export does not open or navigate a browser tab.
+- Full-chat scanning with progress, cancellation, ordered capture, and scroll restoration.
+- Fast path for fully mounted conversations; overlapping scan for virtualized history.
+- Recognizes legacy and newer ChatGPT role markers, preserves prompt bubbles rendered as buttons, and retries briefly while visible messages load.
+- Saved captures can be exported again without rescanning, including Markdown fallback after PDF failure.
+- Success appears only after Chrome confirms download completion.
+- Local PDF generation, bundled fonts, no analytics, subscriptions, export account, or backend.
 
-AI Chat Exporter requests only these Chrome permissions:
+ChatGPT and Gemini are the primary capture fixtures. Claude, DeepSeek, Copilot, Perplexity, and Grok retain compatibility selectors; their current live layouts are not newly verified.
 
-- `activeTab`: access the AI chat tab after you invoke the extension.
-- `scripting`: run the matching conversation extractor in that tab.
-- `downloads`: save the generated PDF or Markdown file through Chrome.
+## Install
 
-The extension has no host permissions, analytics, tracking, account system, or project-operated backend. Appearance preferences are stored in extension-local browser storage. See [PRIVACY.md](PRIVACY.md) for details.
+Requires Node.js 22+ and Chrome or Chromium 116+ with the Side Panel API.
 
-## Install from source
-
-Requirements: a recent Node.js release with npm and a Chromium-based browser.
-
-```bash
+```sh
 npm ci
 npm test
 ```
 
-Then:
+1. Open `chrome://extensions` and enable **Developer mode**.
+2. Click **Load unpacked**, then choose this project's `dist` folder.
+3. Open a supported chat and click the extension to open its side panel.
 
-1. Open `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Select **Load unpacked**.
-4. Choose the generated `dist` directory.
-
-Run `npm run build` after source changes to rebuild `dist`.
+After source changes, run `npm run build`, then reload the extension.
 
 ## Use
 
-1. Open a supported AI conversation.
-2. Select the AI Chat Exporter extension.
-3. Choose PDF or Markdown and, for PDF, adjust appearance.
-4. Select **Export conversation** and choose where to save it.
+Choose **PDF** or **Markdown** in the side panel. For PDF, choose **Light** or **Dark**. Click **Export**: the panel scans the conversation, then asks where to save. Your chat remains on the same tab.
 
-## Project structure
+Keep the source chat and side panel open while scanning. **Cancel** stops scanning or PDF rendering. After capture, retry saving or change format without rescanning. **Rescan** discards the captured copy and reads newer messages. Closing or reloading the panel clears its in-memory capture.
 
-```text
-src/adapters/      Provider-specific DOM extraction
-src/background/    Extension message handling and downloads
-src/popup/         Export and preview interface
-src/renderers/     Markdown and PDF generation
-src/shared/        Shared protocol and appearance contracts
-static/            Manifest, popup HTML/CSS, and bundled font
-scripts/           Build helpers
-tests/             Node-based regression tests
-```
+Expand **Preview appearance** to see the first page from currently visible messages. Export runs the full scan. Preview content is bounded and does not represent the entire conversation.
+
+## Scope and limits
+
+Scanning checks both loaded scroll boundaries and message continuity. It cannot prove hidden branches, attachments, collapsed artifacts, or history that the site never mounts. Detected gaps fail explicitly instead of saving a known partial transcript.
+
+PDF preserves readable text, lists, tables, code, and links. Images become descriptions; math stays as TeX source. The panel uses the native system font, including Apple's system font on macOS. PDFs bundle Inter for a similar appearance, with Courier for code; conversations containing unsupported characters use bundled Noto Sans SC instead. Fonts are fully embedded, so Unicode-heavy PDFs are larger. This layout follows ChatGPT's visual structure; pagination and fonts differ from the original web page.
+
+Capture limits: 10 minutes and 10,000 messages. PDF also applies content limits, a 64 MB output cap, and a 3-minute rendering deadline. Markdown can recover an oversized captured conversation.
+
+## Permissions and privacy
+
+Only `activeTab`, `scripting`, `downloads`, and `sidePanel`. The side-panel permission keeps controls in the same window; no permanent host permissions. Chats stay in browser memory; nothing is sent to a project server. Appearance choice is stored locally. Details: [privacy](PRIVACY.md).
 
 ## Development
 
-```bash
-npm run check   # TypeScript validation
-npm run build   # Generate extension in dist/
-npm test        # Build and run all tests
+```sh
+npm run check   # TypeScript
+npm run build   # dist/
+npm test        # unit and integration regressions
 ```
 
-## Security
+Real-browser scripts: `tests/capture-browser.mjs`, `tests/chatgpt-compat-browser.mjs`, `tests/capture-scroll-browser.mjs`, `tests/extension-browser.mjs`, and `tests/side-panel-browser.mjs`. These additionally require Playwright and compatible Chromium. Set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_EXECUTABLE` when using an existing installation. Extension integration uses isolated temporary profiles, synthetic conversations, and test-only host grants. See [verification](docs/VERIFICATION.md) for coverage and live-provider limits.
 
-Chat pages are untrusted input. Extracted content is converted into document data; it is not evaluated as extension code. Report security problems through GitHub's private vulnerability reporting. Do not post private chat content or exploit details in public issues.
+```text
+src/adapters/    Serialized capture engine and provider compatibility
+src/core/        Conversation model, export session, download confirmation
+src/popup/       Simple format, appearance, preview, and progress UI
+src/renderers/   Markdown and PDF generation, cancellable PDF worker
+src/shared/     Appearance and messaging contracts
+static/         Manifest, UI, bundled Unicode font
+scripts/        Build and dependency-license packaging
+tests/          Synthetic regression fixtures
+```
+
+Test coverage and known limitations: [verification](docs/VERIFICATION.md).
 
 ## License
 
-Project source is publicly available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). Personal, educational, research, hobby, and other noncommercial uses are permitted. Commercial use, resale, paid redistribution, and use in a commercial product or service are not permitted by this license.
+Original code currently uses [PolyForm Noncommercial 1.0.0](LICENSE.md). It is publicly available for permitted noncommercial use, **source-available rather than OSI open source**. Dependencies keep their own licenses; full applicable texts ship in `dist/licenses` alongside [third-party notices](THIRD_PARTY_NOTICES.md).
 
-Because this restriction disallows commercial use, this project is **source-available**, not Open Source Initiative-approved open-source software. Third-party dependencies and the bundled font remain under their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-ChatGPT, Claude, DeepSeek, Gemini, Microsoft Copilot, Perplexity, and Grok are trademarks of their respective owners. This project is independent and is not endorsed by or affiliated with those providers.
+This independent project is not endorsed by ChatGPT or other supported providers. Product names belong to their respective owners. Report security issues privately; never include private chats in public issues.

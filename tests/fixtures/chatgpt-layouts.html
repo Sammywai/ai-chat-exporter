@@ -1,0 +1,67 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Synthetic compatibility chat - ChatGPT</title>
+<style>body{margin:0;font:16px sans-serif}#chat{height:480px;overflow-y:auto;scroll-behavior:smooth}#history{position:relative;margin:0;padding:0}.turn{display:block;box-sizing:border-box;height:160px;width:100%;margin:0;padding:16px}li{display:block;list-style:none}p{margin:0}button{font:inherit}</style>
+</head><body><main id="chat"><div id="history"></div></main><script>
+// Synthetic markup/content; no external implementation copied.
+// Public selector/role evidence:
+// https://github.com/rashidazarang/chatgpt-chat-exporter/blob/2882af2aa03103be31dc8ef448e49cae593e19f7/src/extraction-engine.js#L136-L150
+// Public prompt-button preservation evidence:
+// https://github.com/rashidazarang/chatgpt-chat-exporter/blob/2882af2aa03103be31dc8ef448e49cae593e19f7/src/extraction-engine.js#L608-L622
+// Public search-key role suffix evidence:
+// https://github.com/rashidazarang/chatgpt-chat-exporter/blob/2882af2aa03103be31dc8ef448e49cae593e19f7/src/extraction-engine.js#L1538-L1565
+const params = new URLSearchParams(location.search);
+const variant = params.get('variant') || 'message-role';
+const wrapperTag = params.get('wrapper') === 'div' ? 'div' : 'article';
+const virtual = params.get('mode') === 'virtual';
+const total = Number(params.get('count') || 4);
+const hydrateMs = Math.max(0, Number(params.get('hydrate') || 0));
+let hydrated = hydrateMs === 0;
+const chat = document.querySelector('#chat');
+const historyContainer = document.querySelector('#history');
+function turn(index) {
+  const role = index % 2 ? 'assistant' : 'user';
+  const article = document.createElement(wrapperTag);
+  article.className = 'turn';
+  article.setAttribute('data-turn-key', `turn-${index}`);
+  let content = article;
+  if (variant === 'legacy' || variant === 'role-button' || variant === 'mixed') {
+    article.setAttribute('data-message-author-role', role);
+    article.setAttribute('data-message-id', `turn-${index}`);
+  }
+  if (variant === 'search-key' || variant === 'mixed') {
+    const unit = document.createElement('div');
+    unit.setAttribute('data-chatgpt-search-unit-key', `turn-${index}:${role}`);
+    content.append(unit); content = unit;
+  }
+  if (variant === 'message-role' || variant === 'mixed') {
+    const message = document.createElement('li');
+    message.setAttribute('data-message-role', role);
+    content.append(message); content = message;
+  }
+  if (role === 'user' && variant !== 'legacy') {
+    const bubble = document.createElement('button');
+    bubble.setAttribute('data-user-message-bubble', '');
+    const text = document.createElement('span');text.textContent = `Prompt ${index}`;
+    bubble.append(text);content.append(bubble);
+  } else {
+    const text = document.createElement('p');text.textContent = `${role === 'user' ? 'Prompt' : 'Answer'} ${index}`;
+    if (role === 'assistant') {const markdown = document.createElement('div');markdown.className='markdown';markdown.append(text);content.append(markdown)}
+    else content.append(text);
+  }
+  const copy = document.createElement('button');copy.textContent = 'Copy response';copy.setAttribute('aria-label','Copy response');content.append(copy);
+  const feedback = document.createElement('button');feedback.textContent = 'Thumbs up';feedback.setAttribute('aria-label','Thumbs up');content.append(feedback);
+  if (virtual) {article.style.position='absolute';article.style.top=`${index*160}px`}
+  return article;
+}
+function draw() {
+  historyContainer.style.height = `${total*160}px`;
+  if (!hydrated) {historyContainer.replaceChildren();return}
+  const start = virtual ? Math.max(0, Math.floor(chat.scrollTop/160)-1) : 0;
+  const end = virtual ? Math.min(total,start+6) : total;
+  historyContainer.replaceChildren(...Array.from({length:end-start},(_,offset)=>turn(start+offset)));
+}
+chat.addEventListener('scroll',draw);
+draw();chat.style.scrollBehavior='auto';chat.scrollTop=Math.floor(total*160*.45);draw();chat.style.scrollBehavior='smooth';
+if (hydrateMs > 0) setTimeout(()=>{hydrated=true;draw()},hydrateMs);
+window.fixture = {chat,total,draw};
+</script></body></html>

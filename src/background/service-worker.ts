@@ -1,10 +1,8 @@
-import { extractChatGptConversation } from "../adapters/chatgpt.js";
-import { extractClaudeConversation } from "../adapters/claude.js";
-import { extractDeepSeekConversation } from "../adapters/deepseek.js";
-import { extractAdditionalConversation, type AdditionalProvider } from "../adapters/additional.js";
+import { captureConversation } from "../adapters/capture.js";
+import type { Provider } from "../core/conversation.js";
 import {
-  ConversationLimitError,
   createConversation,
+  createConversationPreview,
   type ConversationDraft
 } from "../core/conversation.js";
 import { renderMarkdown } from "../renderers/markdown.js";
@@ -18,9 +16,34 @@ import {
 } from "../shared/protocol.js";
 import type { PdfOptions } from "../shared/pdf-options.js";
 
+const PDF_DOWNLOAD_LIMIT_BYTES = 64 * 1024 * 1024;
+
+chrome.action.onClicked.addListener(tab => {
+  if (tab.id === undefined) return;
+  const tabId = tab.id;
+  // Submit the tab-specific path first, but invoke open in this click's stack:
+  // waiting for setOptions' response can discard the toolbar user gesture.
+  const options = chrome.sidePanel.setOptions({
+    tabId, path: `popup/index.html?mode=panel&sourceTabId=${tabId}`, enabled: true
+  });
+  const opened = chrome.sidePanel.open({ tabId });
+  void Promise.all([options, opened]).then(() => {
+    void chrome.action.setTitle({ tabId, title: "Export AI chat" });
+  }).catch(() => {
+    void chrome.action.setTitle({ tabId, title: "Could not open export panel. Reload the extension and retry." });
+  });
+});
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (isInspectCurrentConversationRequest(message)) {
-    void inspectCurrentConversation(message.tabId).then(sendResponse);
+    void inspectCurrentConversation(message.tabId)
+      .then(sendResponse)
+      .catch(() => {
+        sendResponse({
+          status: "unavailable",
+          message: "Conversation is unavailable. Reload the chat, then retry."
+        });
+      });
     return true;
   }
 
@@ -28,7 +51,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return;
   }
 
-  void exportCurrentConversation(message.format, message.pdfOptions, message.tabId).then(sendResponse);
+  void exportCurrentConversation(message.format, message.pdfOptions, message.tabId)
+    .then(sendResponse)
+    .catch(() => {
+      sendResponse({
+        status: "unavailable",
+        message: "Export failed. Keep the AI chat open, then try again."
+      });
+    });
   return true;
 });
 
@@ -43,8 +73,8 @@ async function inspectCurrentConversation(tabId?: number): Promise<ConversationI
   }
 
   try {
-    const conversation = await extractConversation(tab.id, provider);
-    if (!conversation || conversation.messages.length === 0) {
+    const draft = await extractConversation(tab.id, provider, "preview");
+    if (!draft || draft.messages.length === 0) {
       return {
         status: "empty",
         provider: provider.name,
@@ -56,19 +86,19 @@ async function inspectCurrentConversation(tabId?: number): Promise<ConversationI
     return {
       status: "ready",
       provider: provider.name,
-      title: conversation.title,
-      messageCount: conversation.messages.length,
+      title: draft.title,
+      messageCount: draft.messages.length,
       tabId: tab.id,
-      conversation
+      // Only a bounded preview is sent to the popup, so the inspection message stays
+      // small even for a very large conversation, and the size ceiling is not applied here.
+      conversation: createConversationPreview(draft)
     };
-  } catch (error) {
+  } catch {
     return {
       status: "unavailable",
       provider: provider.name,
       tabId: tab.id,
-      message: error instanceof ConversationLimitError
-        ? error.message
-        : `${provider.name} conversation is unavailable. Reload the chat, then retry.`
+      message: `${provider.name} conversation is unavailable. Reload the chat, then retry.`
     };
   }
 }
@@ -88,29 +118,27 @@ async function exportCurrentConversation(
     };
   }
 
-  let conversation;
+  let draft;
   try {
-    conversation = await extractConversation(tab.id, provider);
-  } catch (error) {
+    draft = await extractConversation(tab.id, provider, "complete");
+  } catch {
     return {
       status: "unavailable",
-      message: error instanceof ConversationLimitError
-        ? error.message
-        : `${provider.name} conversation is unavailable. Reload the chat, then retry.`
+      message: `${provider.name} conversation is unavailable. Reload the chat, then retry.`
     };
   }
-  if (!conversation || conversation.messages.length === 0) {
+  if (!draft || draft.messages.length === 0) {
     return {
       status: "unavailable",
       message: `No visible ${provider.name} messages were found on this page.`
     };
   }
 
-  const filename = toFilename(conversation.title);
+  const filename = toFilename(draft.title);
 
   if (format === "markdown") {
     await chrome.downloads.download({
-      url: `data:text/markdown;charset=utf-8,${encodeURIComponent(renderMarkdown(conversation))}`,
+      url: `data:text/markdown;charset=utf-8,${encodeURIComponent(renderMarkdown(draft))}`,
       filename: `${filename}.md`,
       saveAs: true
     });
@@ -121,8 +149,21 @@ async function exportCurrentConversation(
     };
   }
 
+  // The content ceiling is a backstop for the expensive PDF renderer only; the
+  // Markdown path above has no size constraint. A very large chat that cannot render
+  // as a PDF can still be exported as Markdown.
+  let conversation;
+  try {
+    conversation = createConversation(draft);
+  } catch {
+    return {
+      status: "unavailable",
+      message: "This conversation is too large to render as a PDF safely. Try Markdown, or split it into smaller conversations."
+    };
+  }
+
   const pdf = await renderPdf(conversation, pdfOptions);
-  if (pdf.byteLength > 64 * 1024 * 1024) {
+  if (pdf.byteLength > PDF_DOWNLOAD_LIMIT_BYTES) {
     return {
       status: "unavailable",
       message: "The generated PDF is too large to download safely. Split the conversation, then retry."
@@ -154,21 +195,21 @@ async function resolveTab(tabId?: number): Promise<ChromeTab | undefined> {
 
 async function extractConversation(
   tabId: number,
-  provider: ProviderTarget
-): Promise<ReturnType<typeof createConversation> | null> {
+  provider: ProviderTarget,
+  mode: "preview" | "complete"
+): Promise<ConversationDraft | null> {
   const [injection] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: provider.extractor,
-    ...(provider.args ? { args: provider.args } : {})
+    func: captureConversation,
+    args: [provider.provider, { mode }]
   });
-  return injection?.result ? createConversation(injection.result) : null;
+  const result = injection?.result;
+  if (!result || result.status === "empty") return null;
+  if (result.status !== "captured") throw new Error(result.message);
+  return result.conversation;
 }
 
-interface ProviderTarget {
-  name: string;
-  extractor: (...args: any[]) => ConversationDraft | null | Promise<ConversationDraft | null>;
-  args?: unknown[];
-}
+interface ProviderTarget { name: string; provider: Provider }
 
 function providerForUrl(url: string | undefined): ProviderTarget | null {
   if (!url) {
@@ -177,27 +218,27 @@ function providerForUrl(url: string | undefined): ProviderTarget | null {
 
   const hostname = new URL(url).hostname;
   if (hostname === "chatgpt.com" || hostname === "chat.openai.com") {
-    return { name: "ChatGPT", extractor: extractChatGptConversation };
+    return { name: "ChatGPT", provider: "chatgpt" };
   }
 
   if (hostname === "claude.ai" || hostname.endsWith(".claude.ai")) {
-    return { name: "Claude", extractor: extractClaudeConversation };
+    return { name: "Claude", provider: "claude" };
   }
 
   if (hostname === "chat.deepseek.com") {
-    return { name: "DeepSeek", extractor: extractDeepSeekConversation };
+    return { name: "DeepSeek", provider: "deepseek" };
   }
 
   if (hostname === "gemini.google.com" || hostname.endsWith(".gemini.google.com")) {
-    return additionalProviderTarget("Gemini", "gemini");
+    return { name: "Gemini", provider: "gemini" };
   }
 
   if (hostname === "copilot.microsoft.com" || hostname.endsWith(".copilot.microsoft.com")) {
-    return additionalProviderTarget("Copilot", "copilot");
+    return { name: "Copilot", provider: "copilot" };
   }
 
   if (hostname === "perplexity.ai" || hostname.endsWith(".perplexity.ai")) {
-    return additionalProviderTarget("Perplexity", "perplexity");
+    return { name: "Perplexity", provider: "perplexity" };
   }
 
   if (
@@ -205,18 +246,10 @@ function providerForUrl(url: string | undefined): ProviderTarget | null {
     hostname.endsWith(".grok.com") ||
     (hostname === "x.com" && new URL(url).pathname.startsWith("/i/grok"))
   ) {
-    return additionalProviderTarget("Grok", "grok");
+    return { name: "Grok", provider: "grok" };
   }
 
   return null;
-}
-
-function additionalProviderTarget(name: string, provider: AdditionalProvider): ProviderTarget {
-  return {
-    name,
-    extractor: extractAdditionalConversation,
-    args: [provider]
-  };
 }
 
 function toFilename(title: string): string {

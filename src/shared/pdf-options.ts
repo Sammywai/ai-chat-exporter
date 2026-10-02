@@ -1,3 +1,23 @@
+/** The public UI uses one transcript layout with two familiar appearances. */
+export function createGptPdfOptions(mode: "light" | "dark"): NormalizedPdfOptions {
+  const dark = mode === "dark";
+  return normalizePdfOptions({
+    template: "reference", themeMode: mode, bubbleStyle: "brand",
+    speakerColors: "custom", colorPreset: "custom", textSize: "standard",
+    spacing: "comfortable", tableStyle: "rules", codeStyle: "panel",
+    customColors: {
+      page: dark ? "#0D0D0D" : "#FFFFFF",
+      text: dark ? "#ECECEC" : "#0D0D0D",
+      userBubble: dark ? "#2F2F2F" : "#F4F4F4",
+      userText: dark ? "#ECECEC" : "#0D0D0D",
+      userAccent: dark ? "#ECECEC" : "#0D0D0D",
+      assistantAccent: dark ? "#ECECEC" : "#0D0D0D",
+      assistantSurface: dark ? "#0D0D0D" : "#FFFFFF",
+      rule: dark ? "#424242" : "#D9D9D9"
+    }
+  });
+}
+
 export const PDF_TEMPLATE_OPTIONS = [
   { value: "reference", label: "GPT-style chat", description: "Light brand-led transcript with rounded user bubbles", bestFor: "Everyday chat" },
   { value: "quiet-paper", label: "V1 · Quiet Paper", description: "Calm transcript for everyday reading and printing", bestFor: "Print-friendly reading" },

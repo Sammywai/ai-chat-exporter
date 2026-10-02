@@ -1,6 +1,46 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { CONVERSATION_LIMITS } from "../dist/core/conversation.js";
+
+test("toolbar opens the tab-bound panel before its click gesture expires, even while options completion is pending", async () => {
+  const originalChrome = globalThis.chrome;
+  let onClick;
+  const calls = [];
+  let finishOptions;
+  let gesture = false;
+  const optionsCompletion = new Promise(resolve => { finishOptions = resolve; });
+  globalThis.chrome = {
+    action: {
+      onClicked: { addListener(listener) { onClick = listener; } },
+      setTitle: async options => calls.push(["title", options])
+    },
+    sidePanel: {
+      setOptions: options => { calls.push(["options", options]); return optionsCompletion; },
+      open: async options => {
+        if (!gesture) throw new Error("sidePanel.open() requires the current click gesture.");
+        calls.push(["open", options]);
+      }
+    },
+    runtime: { onMessage: { addListener() {} } },
+    tabs: { create() { throw new Error("Export must stay on the current tab."); } }
+  };
+  try {
+    await import(`../dist/background/service-worker.js?side-panel-${Date.now()}`);
+    gesture = true;
+    onClick({ id: 42, url: "https://chatgpt.com/c/synthetic" });
+    gesture = false;
+    const callsBeforeOptionsCompletion = calls.slice();
+    finishOptions();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(callsBeforeOptionsCompletion, [
+      ["options", { tabId: 42, path: "popup/index.html?mode=panel&sourceTabId=42", enabled: true }],
+      ["open", { tabId: 42 }]
+    ]);
+    assert.deepEqual(calls.at(-1), ["title", { tabId: 42, title: "Export AI chat" }], "Successful retry clears a stale failure title.");
+  } finally { globalThis.chrome = originalChrome; }
+});
+
 test("returns the active ChatGPT conversation to an export request", async () => {
   const originalChrome = globalThis.chrome;
   let messageListener;
@@ -18,6 +58,7 @@ test("returns the active ChatGPT conversation to an export request", async () =>
   };
 
   globalThis.chrome = {
+    action: { onClicked: { addListener() {} } },
     runtime: {
       onMessage: {
         addListener(listener) {
@@ -31,7 +72,7 @@ test("returns the active ChatGPT conversation to an export request", async () =>
     scripting: {
       executeScript: async (request) => {
         assert.equal(request.target.tabId, 7);
-        return [{ result: conversation }];
+        return [{ result: captured(conversation) }];
       }
     },
     downloads: {
@@ -74,6 +115,7 @@ test("accepts Claude and DeepSeek conversations", async () => {
   const usedExtractors = [];
 
   globalThis.chrome = {
+    action: { onClicked: { addListener() {} } },
     runtime: {
       onMessage: {
         addListener(listener) {
@@ -86,13 +128,13 @@ test("accepts Claude and DeepSeek conversations", async () => {
     },
     scripting: {
       executeScript: async (request) => {
-        usedExtractors.push(request.func.toString());
+        usedExtractors.push(request.args[0]);
         return [{
-          result: {
+          result: captured({
             provider: activeUrl.includes("claude") ? "claude" : "deepseek",
             title: "VPS plan",
             messages: [{ id: "a-1", role: "assistant", blocks: [{ type: "paragraph", text: "Use WSL2." }] }]
-          }
+          })
         }];
       }
     },
@@ -112,20 +154,21 @@ test("accepts Claude and DeepSeek conversations", async () => {
       assert.deepEqual(response, { status: "downloaded", message: "Markdown export is ready." });
     }
 
-    assert.match(usedExtractors[0], /claude/);
-    assert.match(usedExtractors[1], /deepseek/);
+    assert.equal(usedExtractors[0], "claude");
+    assert.equal(usedExtractors[1], "deepseek");
   } finally {
     globalThis.chrome = originalChrome;
   }
 });
 
-test("routes Gemini, Copilot, Perplexity, and Grok hosts to the generic extractor", async () => {
+test("routes Gemini, Copilot, Perplexity, and Grok hosts to the shared scanner", async () => {
   const originalChrome = globalThis.chrome;
   let messageListener;
   let activeUrl = "https://gemini.google.com/app";
   const requests = [];
 
   globalThis.chrome = {
+    action: { onClicked: { addListener() {} } },
     runtime: {
       onMessage: {
         addListener(listener) {
@@ -140,11 +183,11 @@ test("routes Gemini, Copilot, Perplexity, and Grok hosts to the generic extracto
       executeScript: async (request) => {
         requests.push(request);
         return [{
-          result: {
+          result: captured({
             provider: request.args[0],
             title: "Cross-platform test",
             messages: [{ id: "a-1", role: "assistant", blocks: [{ type: "paragraph", text: "Answer." }] }]
-          }
+          })
         }];
       }
     },
@@ -168,8 +211,8 @@ test("routes Gemini, Copilot, Perplexity, and Grok hosts to the generic extracto
       await new Promise((resolve) => {
         messageListener({ type: "export-current-conversation", format: "markdown" }, {}, resolve);
       });
-      assert.deepEqual(requests.at(-1).args, [provider]);
-      assert.match(requests.at(-1).func.toString(), /extractAdditionalConversation/);
+      assert.deepEqual(requests.at(-1).args, [provider, { mode: "complete" }]);
+      assert.match(requests.at(-1).func.toString(), /captureConversation/);
     }
   } finally {
     globalThis.chrome = originalChrome;
@@ -181,15 +224,16 @@ test("uses the conversation topic, including Chinese, as the download filename",
   let messageListener;
   let downloadOptions;
   globalThis.chrome = {
+    action: { onClicked: { addListener() {} } },
     runtime: { onMessage: { addListener(listener) { messageListener = listener; } } },
     tabs: { query: async () => [{ id: 7, url: "https://chat.deepseek.com/a/chat" }] },
     scripting: {
       executeScript: async () => [{
-        result: {
+        result: captured({
           provider: "deepseek",
           title: "近视雷射手術名詞解釋",
           messages: [{ id: "a-1", role: "assistant", blocks: [{ type: "paragraph", text: "Answer." }] }]
-        }
+        })
       }]
     },
     downloads: { download: async (options) => { downloadOptions = options; return 1; } }
@@ -206,11 +250,12 @@ test("uses the conversation topic, including Chinese, as the download filename",
   }
 });
 
-test("reports supported-tab readiness and preserves source tab for the full editor", async () => {
+test("reports supported-tab readiness and preserves source tab for the export panel", async () => {
   const originalChrome = globalThis.chrome;
   let messageListener;
   const sourceTab = { id: 42, url: "https://chatgpt.com/c/source-chat" };
   globalThis.chrome = {
+    action: { onClicked: { addListener() {} } },
     runtime: { onMessage: { addListener(listener) { messageListener = listener; } } },
     tabs: {
       query: async () => [{ id: 99, url: "chrome-extension://popup/editor.html" }],
@@ -223,14 +268,14 @@ test("reports supported-tab readiness and preserves source tab for the full edit
       executeScript: async (request) => {
         assert.equal(request.target.tabId, 42);
         return [{
-          result: {
+          result: captured({
             provider: "chatgpt",
             title: "Source conversation",
             messages: [
               { id: "u-1", role: "user", blocks: [{ type: "paragraph", text: "Question" }] },
               { id: "a-1", role: "assistant", blocks: [{ type: "paragraph", text: "Answer" }] }
             ]
-          }
+          })
         }];
       }
     },
@@ -269,12 +314,13 @@ test("distinguishes unsupported, empty, and unavailable conversation states", as
   let extraction = null;
   let extractionError = false;
   globalThis.chrome = {
+    action: { onClicked: { addListener() {} } },
     runtime: { onMessage: { addListener(listener) { messageListener = listener; } } },
     tabs: { query: async () => [{ id: 7, url: activeUrl }] },
     scripting: {
       executeScript: async () => {
         if (extractionError) throw new Error("blocked");
-        return [{ result: extraction }];
+        return [{ result: extraction ? captured(extraction) : { status: "empty", message: "empty" } }];
       }
     },
     downloads: { download: async () => 1 }
@@ -304,14 +350,21 @@ test("distinguishes unsupported, empty, and unavailable conversation states", as
       messages: [{
         id: "a-1",
         role: "assistant",
-        blocks: [{ type: "paragraph", text: "x".repeat(50_001) }]
+        blocks: [{ type: "paragraph", text: "x".repeat(CONVERSATION_LIMITS.charactersPerBlock + 1) }]
       }]
     };
-    assert.deepEqual(await inspect(), {
+    const oversized = await inspect();
+    assert.equal(oversized.status, "ready", "inspection should tolerate large conversations");
+    assert.equal(oversized.provider, "Claude");
+    assert.equal(oversized.messageCount, 1);
+    assert.equal(oversized.conversation.messages.length, 1);
+
+    const oversizedPdf = await new Promise((resolve) => {
+      messageListener({ type: "export-current-conversation", format: "pdf" }, {}, resolve);
+    });
+    assert.deepEqual(oversizedPdf, {
       status: "unavailable",
-      provider: "Claude",
-      tabId: 7,
-      message: "This conversation is too large to export safely. Split it into smaller conversations, then retry."
+      message: "This conversation is too large to render as a PDF safely. Try Markdown, or split it into smaller conversations."
     });
 
     extractionError = true;
@@ -325,3 +378,7 @@ test("distinguishes unsupported, empty, and unavailable conversation states", as
     globalThis.chrome = originalChrome;
   }
 });
+
+function captured(conversation) {
+  return { status: "captured", boundariesReached: true, conversation };
+}

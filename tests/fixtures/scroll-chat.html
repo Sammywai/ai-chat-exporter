@@ -1,0 +1,84 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Synthetic scrolling conversation - ChatGPT</title>
+<style>body{margin:0}#chat{height:420px;overflow-y:auto;scroll-behavior:smooth}article{box-sizing:border-box;height:600px;margin:0;padding:0}p{height:32px;margin:0;scroll-snap-align:start}button{font:inherit}</style>
+</head><body><main id="chat"><div id="history"></div></main><script>
+// Synthetic content and native browser scrolling; no account data or remote requests.
+const params = new URLSearchParams(location.search);
+const mode = params.get('mode') || 'plain';
+const total = Number(params.get('count') || 1);
+const chat = document.querySelector('#chat');
+const historyContainer = document.querySelector('#history');
+const nestedPadding = ['nested-padding-reverse','unmarked-padding-reverse','nested-tail-reverse','short-semantic-reverse','split-canvas-reverse','outer-wrapper-tail-reverse','sibling-tail-reverse','delayed-extent-reverse'].includes(mode);
+const shortSemantic = mode === 'short-semantic-reverse' || mode === 'delayed-extent-reverse';
+const messageHeight = shortSemantic ? 80 : 400;
+let turnContainer = historyContainer;
+let extentReadyAt = 0;
+let boundaryStartedAt = 0;
+if(nestedPadding) {
+  chat.style.height='509px';
+  chat.className='thread-scroll-container';
+  const stack=document.createElement('div');stack.style.containerName='thread-content';stack.style.paddingBottom='6px';
+  const outer=document.createElement('div');outer.style.paddingBottom='32px';outer.dataset.threadUserMessageNavigationContent='true';
+  historyContainer.style.paddingBottom='20px';
+  if(mode!=='unmarked-padding-reverse') {
+    historyContainer.dataset.threadFindTarget='conversation';
+    historyContainer.dataset.chatgptConversationSelectionTarget='true';
+  }
+  const canvas=document.createElement('div');canvas.style.position='relative';canvas.style.flexShrink='0';
+  canvas.style.height=`${mode==='nested-tail-reverse'||mode==='outer-wrapper-tail-reverse'?2200:total*messageHeight}px`;
+  historyContainer.append(canvas);turnContainer=canvas;
+  if(mode==='sibling-tail-reverse') {
+    const tail=document.createElement('div');tail.style.height='600px';historyContainer.append(tail);
+  }
+  if(mode==='delayed-extent-reverse') {
+    let scheduled=false;
+    window.chrome ??= {};
+    window.chrome.runtime = {sendMessage(message) {
+      if(message.phase==='Checking last message'&&!scheduled) {
+        scheduled=true;boundaryStartedAt=performance.now();
+        setTimeout(()=>{canvas.style.height='250px'},100);
+        setTimeout(()=>{canvas.style.height='160px';extentReadyAt=performance.now()},200);
+      }
+      return Promise.resolve();
+    }};
+  }
+  if(mode==='split-canvas-reverse') {
+    const emptyCanvas=document.createElement('div');emptyCanvas.style.position='relative';emptyCanvas.style.flexShrink='0';emptyCanvas.style.height='100px';
+    historyContainer.append(emptyCanvas);
+  }
+  if(shortSemantic) {historyContainer.style.minHeight='509px';historyContainer.style.flex='1';outer.style.display='flex';outer.style.flexDirection='column'}
+  if(mode==='outer-wrapper-tail-reverse') {
+    const outsideArticle=document.createElement('article');outsideArticle.style.height='auto';outsideArticle.append(historyContainer);outer.append(outsideArticle);
+  } else outer.append(historyContainer);
+  const clearance=document.createElement('div');clearance.style.height='100px';
+  stack.append(outer,clearance);chat.append(stack);stack.style.flexShrink='0';
+  const footer=document.createElement('div');footer.dataset.threadScrollFooter='true';footer.style.position='absolute';chat.append(footer);
+}
+for (let index=0;index<total;index++) {
+  const article=document.createElement('article');
+  const message=nestedPadding?document.createElement('div'):article;
+  message.setAttribute('data-message-author-role', index%2?'assistant':'user');
+  message.setAttribute('data-message-id', `scroll-turn-${index}`);
+  const text=document.createElement('p');text.textContent=`Scroll message ${index}`;
+  message.append(text);
+  if(nestedPadding) {
+    article.style.height=`${messageHeight}px`;article.style.paddingBottom='20px';message.style.height=`${messageHeight-44}px`;
+    const toolbar=document.createElement('button');toolbar.textContent='Copy response';toolbar.style.height='24px';
+    article.append(message,toolbar);
+  }
+  if(mode==='outer-wrapper-tail-reverse') {message.style.height=`${messageHeight}px`;turnContainer.append(message)}
+  else turnContainer.append(article);
+}
+if(mode.includes('snap')) chat.style.setProperty('scroll-snap-type','y mandatory','important');
+if(mode.includes('reverse')) {chat.style.display='flex';chat.style.flexDirection='column-reverse';historyContainer.style.flexShrink='0'}
+if(mode==='collapse') {
+  const spacer=document.createElement('div');spacer.style.height='1000px';historyContainer.append(spacer);
+  chat.addEventListener('scroll',()=>{if(chat.scrollTop>400) spacer.remove()});
+}
+chat.style.setProperty('scroll-behavior','auto');
+chat.scrollTop=mode==='collapse'?0:mode.includes('reverse')?-Math.floor((chat.scrollHeight-chat.clientHeight)*.45):Math.floor(total*600*.45);
+if(mode==='blocked') {chat.scrollTop=0;Object.defineProperty(chat,'scrollTop',{get:()=>0,set:()=>{},configurable:true})}
+chat.style.setProperty('scroll-behavior','smooth','important');
+chat.style.setProperty('overflow-anchor','auto','important');
+window.fixture={chat,total,get extentReadyAt(){return extentReadyAt},get boundaryStartedAt(){return boundaryStartedAt}};
+</script></body></html>

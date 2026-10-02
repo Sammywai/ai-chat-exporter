@@ -40,14 +40,14 @@ test("extracts visible ChatGPT user and assistant messages into the shared model
 test("preserves headings, paragraphs, list items, and code blocks from an assistant answer", async () => {
   const originalDocument = globalThis.document;
   globalThis.document = {
-    title: "VPS setup - ChatGPT",
+    title: "Development setup - ChatGPT",
     querySelectorAll() {
       return [
         message("assistant", "a-1", "Fallback text", [
-          block("H2", "Install Hermes"),
-          block("P", "Open PowerShell as Administrator."),
-          codeBlock("powershell", "hermes doctor"),
-          block("LI", "Restart the gateway after changing its configuration.")
+          block("H2", "Check Node.js"),
+          block("P", "Open a terminal."),
+          codeBlock("powershell", "node --version"),
+          block("LI", "Run the checks after changing the configuration.")
         ])
       ];
     }
@@ -56,18 +56,18 @@ test("preserves headings, paragraphs, list items, and code blocks from an assist
   try {
     assert.deepEqual(await extractChatGptConversation(), {
       provider: "chatgpt",
-      title: "VPS setup",
+      title: "Development setup",
       messages: [
         {
           id: "a-1",
           role: "assistant",
           blocks: [
-            { type: "heading", level: 2, text: "Install Hermes" },
-            { type: "paragraph", text: "Open PowerShell as Administrator." },
-            { type: "code", language: "powershell", code: "hermes doctor" },
+            { type: "heading", level: 2, text: "Check Node.js" },
+            { type: "paragraph", text: "Open a terminal." },
+            { type: "code", language: "powershell", code: "node --version" },
             {
               type: "paragraph",
-              text: "- Restart the gateway after changing its configuration."
+              text: "- Run the checks after changing the configuration."
             }
           ]
         }

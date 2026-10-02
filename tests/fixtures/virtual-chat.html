@@ -1,0 +1,76 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Long conversation - ChatGPT</title>
+<style>body{margin:0;font:16px sans-serif} #chat{height:420px;overflow-y:auto;scroll-behavior:smooth}#history{position:relative}.turn{display:block;box-sizing:border-box;height:180px;padding:16px;border-bottom:1px solid #ddd}button{color:#333}</style></head>
+<body><div id="chat"><div id="history"></div></div><script>
+const params = new URLSearchParams(location.search);
+const provider = params.get('provider') || 'chatgpt';
+const total = Number(params.get('count') || 80);
+const useIds = params.get('ids') !== '0';
+const mode = params.get('mode') || 'virtual';
+const isStatic = mode === 'static' || mode === 'static-padded';
+const chat = document.querySelector('#chat');
+const history = document.querySelector('#history');
+if (mode === 'static-padded') history.style.padding = '24px 0 96px';
+let ready = mode !== 'delayed' && mode !== 'delayed-slow' && mode !== 'prepend';
+let pending;
+let firstSeen = false;
+let updateDone = false;
+let emptyEndSeen = false;
+document.title = `Long conversation - ${provider === 'gemini' ? 'Gemini' : 'ChatGPT'}`;
+function turn(index) {
+  const el = document.createElement(provider === 'gemini' ? (index % 2 ? 'model-response' : 'user-query') : 'article');
+  el.className = 'turn';
+  el.dataset.index = String(index);
+  if (provider === 'chatgpt') el.setAttribute('data-message-author-role', index % 2 ? 'assistant' : 'user');
+  if (useIds) el.setAttribute('data-message-id', mode === 'duplicate' ? 'same-id' : `turn-${index}`);
+  const wrapper = document.createElement('div');
+  wrapper.className = provider === 'gemini' ? (index % 2 ? 'model-response-text' : 'query-text') : 'markdown';
+  const p = document.createElement('p');
+  p.textContent = mode === 'repeat' ? (index % 2 ? 'Same answer' : 'Same question') : `Message ${index}`;
+  wrapper.append(p);
+  if (index === total - 1 && mode === 'update') p.textContent = updateDone ? 'Final completed answer' : 'Initial partial answer';
+  const button = document.createElement('button'); button.textContent = 'Copy response'; wrapper.append(button);
+  el.append(wrapper);
+  return el;
+}
+function draw() {
+  const available = ready ? total : Math.max(10, Math.floor(total / 2));
+  history.style.height = `${available * 180}px`;
+  if (mode === 'end-empty' && chat.scrollTop >= available * 180 - chat.clientHeight) {
+    history.replaceChildren(); emptyEndSeen = true; return;
+  }
+  const start = isStatic ? 0 : mode === 'gap' ? Math.min(available - 6, Math.floor(chat.scrollTop / 180) * 6) : Math.max(0, Math.floor(chat.scrollTop / 180) - 1);
+  const end = isStatic ? available : Math.min(available, start + 6);
+  const indices = mode === 'sparse' && chat.scrollTop < 1
+    ? [...Array.from({length:6},(_,i)=>i), ...Array.from({length:6},(_,i)=>available-6+i)]
+    : Array.from({length:end-start},(_,offset)=>start+offset);
+  history.replaceChildren(...indices.map(index => {
+    const el = turn(index + (mode === 'prepend' && !ready ? total - available : 0));
+    if (!isStatic) {el.style.position='absolute';el.style.top=`${index*180}px`;el.style.width='100%'}
+    return el;
+  }));
+  if (chat.scrollTop < 1 && !ready && !firstSeen) {
+    firstSeen = true;
+    if (mode === 'delayed-slow') {const loader=document.createElement('div');loader.className='loading-history';loader.textContent='Loading history';document.body.append(loader)}
+    setTimeout(() => {
+      ready=true;document.querySelector('.loading-history')?.remove();
+      if (mode === 'prepend') {history.style.height=`${total*180}px`;chat.scrollTop=(total-available)*180}
+      draw();
+    }, mode === 'delayed-slow' ? 1000 : 150);
+  }
+  if (end === available && mode === 'update' && !updateDone) {
+    updateDone=true;setTimeout(draw,80);
+  }
+}
+chat.addEventListener('scroll', () => {
+  clearTimeout(pending);
+  if (mode === 'start-blank' && chat.scrollTop < 1) {history.replaceChildren();pending=setTimeout(draw,500)}
+  else if (mode === 'slow' || mode === 'very-slow') pending = setTimeout(draw, mode === 'very-slow' ? 900 : 100);
+  else draw();
+});
+draw();
+chat.style.scrollBehavior='auto';chat.scrollTop=Math.floor(total*180*0.45);draw();chat.style.scrollBehavior='smooth';
+let scrollEvents = 0;
+chat.addEventListener('scroll', () => scrollEvents++);
+window.fixture = {chat, history, total, draw, get scrollEvents() {return scrollEvents}, get emptyEndSeen() {return emptyEndSeen}};
+</script></body></html>

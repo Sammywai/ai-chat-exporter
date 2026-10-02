@@ -1,5 +1,5 @@
 import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
 
 import {
   providerDisplayName,
@@ -22,7 +22,9 @@ import {
 } from "../shared/pdf-appearance.js";
 
 const A4: [number, number] = [595.28, 841.89];
-let unicodeFontBytes: Promise<Uint8Array> | undefined;
+const bundledFontBytes = new Map<string, Promise<Uint8Array>>();
+const standardGlyphWidths = new WeakMap<PDFFont, Map<string, number>>();
+const embeddedTextWidths = new WeakMap<PDFFont, Map<string, number>>();
 
 interface PdfTheme {
   id: PdfTemplateId;
@@ -204,9 +206,7 @@ export async function renderPdf(
   const layout = createLayout(theme.id);
   const metrics = createMetrics(normalizedOptions);
   const document = await PDFDocument.create();
-  document.registerFontkit(fontkit);
-  const regular = await document.embedFont(await loadUnicodeFont(), { subset: false });
-  const fonts = { regular, bold: regular, mono: regular };
+  const fonts = await embedFonts(document, conversation);
   const providerName = providerDisplayName(conversation.provider);
   const context: PdfContext = {
     document,
@@ -229,8 +229,15 @@ export async function renderPdf(
     context.currentRole = message.role;
     drawMessageHeading(context, message);
 
-    for (const block of message.blocks) {
-      drawBlock(context, block);
+    if (theme.id === "reference" && message.role === "user"
+      && message.blocks.every((block) => block.type === "paragraph")) {
+      drawParagraph(context, message.blocks.map((block) => block.type === "paragraph"
+        ? block.inlineFormat === "markdown" ? readableInline(block.text) : block.text
+        : "").join("\n\n"));
+    } else {
+      for (const block of message.blocks) {
+        drawBlock(context, block);
+      }
     }
 
     context.cursor.y -= metrics.messageGap;
@@ -240,6 +247,44 @@ export async function renderPdf(
   document.setTitle(normalizePdfText(conversation.title));
   document.setAuthor("AI Chat Exporter");
   return document.save();
+}
+
+async function embedFonts(document: PDFDocument, conversation: Conversation): Promise<PdfFonts> {
+  document.registerFontkit(fontkit);
+  const regularBytes = await loadBundledFont("Inter-Regular.ttf");
+  const characters = new Set(fontkit.create(regularBytes).characterSet);
+  const mono = await document.embedFont(StandardFonts.Courier);
+  const monoCharacters = new Set(mono.getCharacterSet());
+  const supported = (text: string): boolean => Array.from(normalizePdfText(text)).every((character) =>
+    /\s/.test(character) || characters.has(character.codePointAt(0)!)
+  );
+  const blockSupported = (block: MessageBlock): boolean => {
+    if (block.type === "table") {
+      return block.headers.every(supported) && block.rows.every((row) => row.every(supported));
+    }
+    if (block.type === "code") return Array.from(normalizePdfText(block.code)).every((character) =>
+      /\s/.test(character) || monoCharacters.has(character.codePointAt(0)!)
+    );
+    if (block.type === "math") return supported(block.tex);
+    if (block.type === "image") return supported(block.alt);
+    return supported(block.text);
+  };
+  if (supported(conversation.title) && conversation.messages.every((message) => message.blocks.every(blockSupported))) {
+    // Full static fonts keep glyphs visible in every PDF viewer. Disable
+    // ligatures so searchable text retains its original character sequence.
+    const fontOptions = { subset: false, features: { liga: false, clig: false } };
+    return {
+      regular: await document.embedFont(regularBytes, fontOptions),
+      bold: await document.embedFont(await loadBundledFont("Inter-Bold.ttf"), fontOptions),
+      mono
+    };
+  }
+
+  // This bundled font loses visible glyphs with fontkit subsetting even though
+  // PDF text extraction succeeds. Keep the existing whole-conversation fallback
+  // for unsupported glyphs, including mixed CJK and Latin conversations.
+  const unicode = await document.embedFont(await loadBundledFont("NotoSansSC.ttf"), { subset: false });
+  return { regular: unicode, bold: unicode, mono: unicode };
 }
 
 function resolveTheme(theme: PdfTheme, options: NormalizedPdfOptions): PdfTheme {
@@ -274,7 +319,8 @@ function resolveTheme(theme: PdfTheme, options: NormalizedPdfOptions): PdfTheme 
   return {
     ...themed,
     userSurface: bubble.userBubble,
-    userText: bubble.userText
+    userText: bubble.userText,
+    codeSurface: mode === "dark" ? "#171717" : "#F7F7F8"
   };
 }
 
@@ -285,26 +331,28 @@ function prefersDarkSystemTheme(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-function loadUnicodeFont(): Promise<Uint8Array> {
-  if (!unicodeFontBytes) {
+function loadBundledFont(filename: string): Promise<Uint8Array> {
+  let fontBytes = bundledFontBytes.get(filename);
+  if (!fontBytes) {
     const fontUrl = typeof chrome !== "undefined" && chrome.runtime?.getURL
-      ? chrome.runtime.getURL("assets/NotoSansSC.ttf")
-      : new URL("../assets/NotoSansSC.ttf", import.meta.url).href;
-    unicodeFontBytes = fetch(fontUrl)
+      ? chrome.runtime.getURL(`assets/${filename}`)
+      : new URL(`../assets/${filename}`, import.meta.url).href;
+    fontBytes = fetch(fontUrl)
       .then((response) => {
         if (!response.ok) {
-          throw new Error("The bundled Unicode PDF font could not be loaded.");
+          throw new Error("The bundled PDF font could not be loaded.");
         }
         return response.arrayBuffer();
       })
       .then((bytes) => new Uint8Array(bytes));
+    bundledFontBytes.set(filename, fontBytes);
   }
 
-  return unicodeFontBytes;
+  return fontBytes;
 }
 
 function createLayout(template: PdfTemplateId): PdfLayout {
-  const margin = template === "reference" ? 30 : 48;
+  const margin = template === "reference" ? 36 : 48;
   return {
     margin,
     bodyWidth: A4[0] - margin * 2,
@@ -315,15 +363,16 @@ function createLayout(template: PdfTemplateId): PdfLayout {
 function createMetrics(options: NormalizedPdfOptions): PdfMetrics {
   const sizeScale = options.textSize === "small" ? 0.9 : options.textSize === "large" ? 1.12 : 1;
   const spacingScale = options.spacing === "compact" ? 0.78 : 1;
-  const bodySize = 10.5 * sizeScale;
+  const reference = options.template === "reference";
+  const bodySize = (reference ? 11.5 : 10.5) * sizeScale;
   return {
     bodySize,
-    bodyLineHeight: bodySize * 1.46,
-    headingSize: 14 * sizeScale,
-    smallHeadingSize: 11.5 * sizeScale,
+    bodyLineHeight: bodySize * (reference ? 1.58 : 1.46),
+    headingSize: (reference ? 15 : 14) * sizeScale,
+    smallHeadingSize: (reference ? 12.5 : 11.5) * sizeScale,
     labelSize: 8.8 * sizeScale,
     blockGap: 8 * spacingScale,
-    messageGap: 16 * spacingScale
+    messageGap: (reference ? 24 : 16) * spacingScale
   };
 }
 
@@ -333,6 +382,15 @@ function drawOpening(context: PdfContext, title: string, providerName: string): 
   const { margin, bodyWidth } = context.layout;
   const { regular, bold } = context.fonts;
   const theme = context.theme;
+
+  if (theme.id === "reference") {
+    let titleY = height - margin - 14;
+    for (const line of wrapText(title, bold, 14, bodyWidth)) {
+      page.drawText(line, { x: margin, y: titleY, size: 14, font: bold, color: hexColor(theme.text) });
+      titleY -= 20;
+    }
+    return titleY - 20;
+  }
 
   if (theme.id === "terminal-ledger") {
     page.drawText("AI CHAT EXPORTER", {
@@ -392,8 +450,8 @@ function drawOpening(context: PdfContext, title: string, providerName: string): 
     color: hexColor(theme.userAccent)
   });
 
-  const titleSize = theme.id === "editorial-ledger" ? 23 : theme.id === "reference" ? 15 : 22;
-  let titleY = height - (theme.id === "reference" ? 66 : 84);
+  const titleSize = theme.id === "editorial-ledger" ? 23 : 22;
+  let titleY = height - 84;
   for (const line of wrapText(title, bold, titleSize, bodyWidth)) {
     page.drawText(line, {
       x: margin,
@@ -427,6 +485,10 @@ function drawMessageHeading(
   const palette = messagePalette(context, message);
   const isUser = message.role === "user";
 
+  if (context.theme.id === "reference") {
+    return;
+  }
+
   if (context.theme.id === "terminal-ledger") {
     const label = isUser ? "YOU" : context.providerName.toUpperCase();
     page.drawText(continued ? `${label} · CONTINUED` : label, {
@@ -442,7 +504,7 @@ function drawMessageHeading(
 
   if (isUser) {
     const label = continued ? "YOU · CONTINUED" : "YOU";
-    const labelWidth = bold.widthOfTextAtSize(label, context.metrics.labelSize);
+    const labelWidth = textWidth(bold, label, context.metrics.labelSize);
     page.drawText(label, {
       x: A4[0] - margin - labelWidth,
       y,
@@ -451,33 +513,6 @@ function drawMessageHeading(
       color: palette.accent
     });
     context.cursor.y -= 12;
-    return;
-  }
-
-  if (context.theme.id === "reference") {
-      page.drawCircle({
-        x: margin + 8,
-        y: y + 2,
-        size: 8,
-        color: hexColor(context.theme.page),
-        borderColor: palette.accent,
-        borderWidth: 1.2
-      });
-      page.drawText("A", {
-        x: margin + 5.4,
-        y: y - 1.5,
-        size: 6,
-        font: bold,
-        color: palette.accent
-      });
-      page.drawText(continued ? `${context.providerName} · CONTINUED` : context.providerName, {
-        x: margin + 22,
-        y,
-        size: context.metrics.labelSize,
-        font: bold,
-        color: palette.accent
-      });
-      context.cursor.y -= 20;
     return;
   }
 
@@ -525,37 +560,48 @@ function drawBlock(context: PdfContext, block: MessageBlock): void {
   }
 
   if (block.type === "table") {
-    drawTable(context, block);
+    drawTable(context, block.inlineFormat === "markdown" ? {
+      ...block, headers: block.headers.map(readableInline), rows: block.rows.map((row) => row.map(readableInline))
+    } : block);
     return;
   }
 
   const text = block.type === "paragraph"
-    ? block.text
+    ? block.inlineFormat === "markdown" ? readableInline(block.text) : block.text
     : block.type === "math"
       ? `Math: ${block.tex}`
       : `Image: ${block.alt}`;
   drawParagraph(context, text);
 }
 
+function readableInline(text: string): string {
+  return text.replace(/\[([^\]]+)\]\((https?:[^)]+|mailto:[^)]+)\)/g, "$1 ($2)")
+    .replace(/`+\s?([^`]+?)\s?`+/g, "$1")
+    .replace(/\\([\\`\[\]<>$#>+*-])/g, "$1");
+}
+
 function drawHeading(context: PdfContext, block: Extract<MessageBlock, { type: "heading" }>): void {
   const size = block.level <= 2 ? context.metrics.headingSize : context.metrics.smallHeadingSize;
-  const lines = wrapText(block.text, context.fonts.bold, size, context.layout.bodyWidth - 14);
+  const inset = context.theme.id === "reference" ? 0 : 14;
+  const lines = wrapText(block.text, context.fonts.bold, size, context.layout.bodyWidth - inset);
   for (const line of lines) {
     ensureRoom(context, size + 8);
     context.cursor.page.drawText(line, {
-      x: context.layout.margin + 14,
-      y: context.cursor.y,
+      x: context.layout.margin + inset,
+      y: context.cursor.y - size,
       size,
       font: context.fonts.bold,
       color: hexColor(context.theme.strong)
     });
-    context.cursor.page.drawText(line, {
-      x: context.layout.margin + 14.28,
-      y: context.cursor.y,
-      size,
-      font: context.fonts.bold,
-      color: hexColor(context.theme.strong)
-    });
+    if (context.fonts.bold === context.fonts.regular) {
+      context.cursor.page.drawText(line, {
+        x: context.layout.margin + inset + 0.28,
+        y: context.cursor.y - size,
+        size,
+        font: context.fonts.bold,
+        color: hexColor(context.theme.strong)
+      });
+    }
     context.cursor.y -= size + 5;
   }
   context.cursor.y -= context.metrics.blockGap;
@@ -563,17 +609,20 @@ function drawHeading(context: PdfContext, block: Extract<MessageBlock, { type: "
 
 function drawParagraph(context: PdfContext, text: string): void {
   const isUser = context.currentRole === "user" && context.theme.id !== "terminal-ledger";
+  const reference = context.theme.id === "reference";
   const isQuote = /^\s*>/.test(text);
   const paragraphText = isQuote ? text.replace(/^\s*>\s?/, "") : text;
-  const padding = isUser ? 8 : 0;
-  const maxBubbleWidth = context.layout.bodyWidth * 0.72;
+  const padding = isUser ? reference ? 13 : 8 : 0;
+  const inset = reference ? 0 : 14;
+  const maxBubbleWidth = context.layout.bodyWidth * (reference ? 0.76 : 0.72);
   const quoteInset = isQuote ? 14 : 0;
   const contentWidth = isUser
     ? maxBubbleWidth - padding * 2
-    : context.layout.bodyWidth - 14 - quoteInset;
+    : context.layout.bodyWidth - inset - quoteInset;
   const lines = wrapInlineText(
     paragraphText,
     context.fonts.regular,
+    context.fonts.bold,
     context.metrics.bodySize,
     contentWidth
   );
@@ -582,7 +631,7 @@ function drawParagraph(context: PdfContext, text: string): void {
       maxBubbleWidth,
       Math.max(
         120,
-        Math.max(...lines.map((line) => inlineLineWidth(line, context.fonts.regular, context.metrics.bodySize))) + padding * 2
+        Math.max(...lines.map((line) => inlineLineWidth(line, context.fonts.regular, context.fonts.bold, context.metrics.bodySize))) + padding * 2
       )
     )
     : 0;
@@ -596,7 +645,7 @@ function drawParagraph(context: PdfContext, text: string): void {
     const segment = lines.slice(lineIndex, lineIndex + linesPerPage);
     const contentHeight = segment.length * lineHeight + padding * 2;
 
-    let x = context.layout.margin + 14;
+    let x = context.layout.margin + inset;
     if (isUser) {
       x = A4[0] - context.layout.margin - bubbleWidth + padding;
       drawRoundedRectangle(context.cursor.page, {
@@ -604,7 +653,7 @@ function drawParagraph(context: PdfContext, text: string): void {
         y: context.cursor.y - contentHeight + padding / 2,
         width: bubbleWidth,
         height: contentHeight,
-        radius: Math.min(14, contentHeight / 2),
+        radius: Math.min(reference ? 20 : 14, contentHeight / 2),
         color: hexColor(context.theme.userSurface),
         borderColor: context.theme.userSurface.toLowerCase() === context.theme.page.toLowerCase()
           || context.options.bubbleStyle === "white-black"
@@ -651,7 +700,7 @@ function drawCode(context: PdfContext, code: string): void {
   const codeLines = code
     .split(/\r?\n/)
     .flatMap((line) => wrapCodeLine(line, context.fonts.mono, codeSize, context.layout.bodyWidth - 38));
-  const x = context.layout.margin + 10;
+  const x = context.layout.margin + (context.theme.id === "reference" ? 0 : 10);
   const lineHeight = codeSize + 4;
   let lineIndex = 0;
   while (lineIndex < codeLines.length) {
@@ -665,7 +714,7 @@ function drawCode(context: PdfContext, code: string): void {
       context.cursor.page.drawRectangle({
         x,
         y: context.cursor.y - codeHeight + 4,
-        width: context.layout.bodyWidth - 10,
+        width: context.layout.bodyWidth - (context.theme.id === "reference" ? 0 : 10),
         height: codeHeight,
         color: hexColor(context.theme.codeSurface)
       });
@@ -710,8 +759,9 @@ function drawTable(context: PdfContext, table: Extract<MessageBlock, { type: "ta
 
   const textSize = Math.max(7.3, (columnCount > 4 ? 7.5 : 8.5) * (context.metrics.bodySize / 10.5));
   const lineHeight = textSize + 3;
-  const tableX = context.layout.margin + 14;
-  const tableWidth = context.layout.bodyWidth - 14;
+  const inset = context.theme.id === "reference" ? 0 : 14;
+  const tableX = context.layout.margin + inset;
+  const tableWidth = context.layout.bodyWidth - inset;
   const columnWidth = tableWidth / columnCount;
   const headerLines = tableCellLines(context, table.headers, columnCount, textSize, columnWidth);
   drawTableRow(context, headerLines, true, 0, {
@@ -744,7 +794,7 @@ function tableCellLines(
   columnWidth: number
 ): string[][] {
   return Array.from({ length: columnCount }, (_, index) =>
-    wrapText(cells[index] ?? "", context.fonts.regular, textSize, columnWidth - 10)
+    wrapText(cells[index] ?? "", context.fonts.bold, textSize, columnWidth - 10)
   );
 }
 
@@ -843,7 +893,7 @@ function drawTableRowFragment(
         font: header ? context.fonts.bold : context.fonts.regular,
         color: hexColor(context.theme.text)
       });
-      if (header) {
+      if (header && context.fonts.bold === context.fonts.regular) {
         context.cursor.page.drawText(line, {
           x: x + 5.18,
           y: cellY,
@@ -884,6 +934,9 @@ function startContinuationPage(context: PdfContext, repeatRole = true): void {
   fillPage(page, context.theme.page);
   context.cursor.page = page;
   context.cursor.y = A4[1] - context.layout.margin;
+  if (context.theme.id === "reference") {
+    return;
+  }
       page.drawText("AI CHAT EXPORTER", {
     x: context.layout.margin,
     y: context.cursor.y,
@@ -907,25 +960,17 @@ function drawFooters(context: PdfContext): void {
   for (const [index, page] of pages.entries()) {
     const { width } = page.getSize();
     const margin = context.layout.margin;
-    drawRuleOnPage(page, margin, 34, width - margin, context.theme.rule);
-
     if (context.theme.id === "reference") {
-      page.drawText("Exported with AI Exporter", {
-        x: margin,
-        y: 18,
-        size: 8,
-        font: context.fonts.regular,
-        color: hexColor(context.theme.footer)
-      });
       const pageLabel = `${index + 1} / ${totalPages}`;
       page.drawText(pageLabel, {
-        x: width - margin - context.fonts.regular.widthOfTextAtSize(pageLabel, 8),
+        x: width - margin - textWidth(context.fonts.regular, pageLabel, 8),
         y: 18,
         size: 8,
         font: context.fonts.regular,
         color: hexColor(context.theme.muted)
       });
     } else {
+      drawRuleOnPage(page, margin, 34, width - margin, context.theme.rule);
       page.drawText(`LOCAL EXPORT  /  ${index + 1}`, {
         x: margin,
         y: 18,
@@ -977,24 +1022,33 @@ interface InlineRun {
   bold: boolean;
 }
 
-function wrapInlineText(text: string, font: PDFFont, size: number, width: number): InlineRun[][] {
+function wrapInlineText(text: string, font: PDFFont, bold: PDFFont, size: number, width: number): InlineRun[][] {
+  if (/\n/.test(text)) {
+    return text.split(/\r?\n/).flatMap((line) => wrapInlineText(line, font, bold, size, width));
+  }
   const runs = parseInlineText(text);
   const lines: InlineRun[][] = [];
   let line: InlineRun[] = [];
   let lineWidth = 0;
 
   for (const run of runs) {
-    for (const fragment of splitInlineRun(run, font, size, width)) {
-      const fragmentWidth = font.widthOfTextAtSize(fragment.text, size);
+    const runFont = run.bold ? bold : font;
+    for (const fragment of splitInlineRun(run, runFont, size, width)) {
+      const fragmentWidth = textWidth(runFont, fragment.text, size);
       if (lineWidth + fragmentWidth > width && line.length > 0) {
         lines.push(line);
         const trimmed = fragment.text.replace(/^\s+/, "");
         line = trimmed ? [{ ...fragment, text: trimmed }] : [];
-        lineWidth = trimmed ? font.widthOfTextAtSize(trimmed, size) : 0;
+        lineWidth = trimmed ? textWidth(runFont, trimmed, size) : 0;
         continue;
       }
 
-      line.push(fragment);
+      const previous = line.at(-1);
+      if (previous && previous.bold === fragment.bold) {
+        previous.text += fragment.text;
+      } else {
+        line.push({ ...fragment });
+      }
       lineWidth += fragmentWidth;
     }
   }
@@ -1021,7 +1075,7 @@ function splitInlineRun(run: InlineRun, font: PDFFont, size: number, width: numb
   const fragments: InlineRun[] = [];
 
   for (const word of words) {
-    if (font.widthOfTextAtSize(word, size) <= width) {
+    if (textWidth(font, word, size) <= width) {
       fragments.push({ ...run, text: word });
       continue;
     }
@@ -1050,15 +1104,15 @@ function drawInlineText(
     const font = run.bold ? bold : regular;
     const color = run.bold ? boldColor : textColor;
     page.drawText(run.text, { x: currentX, y, size, font, color });
-    if (run.bold) {
+    if (run.bold && bold === regular) {
       page.drawText(run.text, { x: currentX + 0.35, y, size, font, color });
     }
-    currentX += font.widthOfTextAtSize(run.text, size);
+    currentX += textWidth(font, run.text, size);
   }
 }
 
-function inlineLineWidth(line: InlineRun[], font: PDFFont, size: number): number {
-  return line.reduce((width, run) => width + font.widthOfTextAtSize(run.text, size), 0);
+function inlineLineWidth(line: InlineRun[], font: PDFFont, bold: PDFFont, size: number): number {
+  return line.reduce((width, run) => width + textWidth(run.bold ? bold : font, run.text, size), 0);
 }
 
 function wrapText(text: string, font: PDFFont, size: number, width: number): string[] {
@@ -1068,7 +1122,7 @@ function wrapText(text: string, font: PDFFont, size: number, width: number): str
 
   for (const word of words) {
     const candidate = line ? `${line} ${word}` : word;
-    if (font.widthOfTextAtSize(candidate, size) <= width) {
+    if (textWidth(font, candidate, size) <= width) {
       line = candidate;
       continue;
     }
@@ -1094,14 +1148,14 @@ function wrapCodeLine(text: string, font: PDFFont, size: number, width: number):
 }
 
 function splitLongWord(word: string, font: PDFFont, size: number, width: number): string[] {
-  if (font.widthOfTextAtSize(word, size) <= width) {
+  if (textWidth(font, word, size) <= width) {
     return [word];
   }
 
   const pieces: string[] = [];
   let piece = "";
   for (const character of word) {
-    if (piece && font.widthOfTextAtSize(piece + character, size) > width) {
+    if (piece && textWidth(font, piece + character, size) > width) {
       pieces.push(piece);
       piece = character;
     } else {
@@ -1112,6 +1166,44 @@ function splitLongWord(word: string, font: PDFFont, size: number, width: number)
     pieces.push(piece);
   }
   return pieces;
+}
+
+function textWidth(font: PDFFont, text: string, size: number): number {
+  if (font.name !== StandardFonts.Helvetica && font.name !== StandardFonts.HelveticaBold
+    && font.name !== StandardFonts.Courier) {
+    // Fontkit shapes each measured word. Reuse exact measurements during
+    // wrapping, with a bounded cache for long conversations.
+    if (text.length > 200) return font.widthOfTextAtSize(text, size);
+    let widths = embeddedTextWidths.get(font);
+    if (!widths) {
+      widths = new Map();
+      embeddedTextWidths.set(font, widths);
+    }
+    let width = widths.get(text);
+    if (width === undefined) {
+      width = font.widthOfTextAtSize(text, 1);
+      if (widths.size >= 2_048) widths.clear();
+      widths.set(text, width);
+    }
+    return width * size;
+  }
+  // pdf-lib measures kerning pairs but draws standard-font text without kerning.
+  // Match actual PDF advance widths so wrapping and bold runs cannot overflow.
+  let widths = standardGlyphWidths.get(font);
+  if (!widths) {
+    widths = new Map();
+    standardGlyphWidths.set(font, widths);
+  }
+  let total = 0;
+  for (const character of text) {
+    let width = widths.get(character);
+    if (width === undefined) {
+      width = font.widthOfTextAtSize(character, 1);
+      widths.set(character, width);
+    }
+    total += width;
+  }
+  return total * size;
 }
 
 function fillPage(page: PDFPage, fill: string): void {

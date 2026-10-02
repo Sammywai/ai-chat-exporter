@@ -30,7 +30,7 @@ function renderBlock(block: ConversationMessage["blocks"][number]): string {
   }
 
   if (block.type === "table") {
-    const escapeCell = (cell: string) => escapeMarkdownText(cell)
+    const escapeCell = (cell: string) => (block.inlineFormat === "markdown" ? cell : escapeMarkdownText(cell))
       .replace(/\|/g, "\\|")
       .replace(/\r?\n/g, " / ");
     const headers = block.headers.map(escapeCell);
@@ -50,7 +50,7 @@ function renderBlock(block: ConversationMessage["blocks"][number]): string {
     return `Image: ${escapeMarkdownText(block.alt)}`;
   }
 
-  return escapeMarkdownText(block.text);
+  return block.inlineFormat === "markdown" ? block.text : escapeMarkdownText(block.text);
 }
 
 function renderCodeBlock(code: string, language?: string): string {
