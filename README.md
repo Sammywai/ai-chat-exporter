@@ -6,11 +6,12 @@ Keep AI conversations as readable PDF or Markdown files. One familiar ChatGPT-st
 
 [Dark transcript sample](docs/images/transcript-dark.png) · [Light transcript sample](docs/images/transcript-light.png). Demo content is synthetic.
 
-**v0.4.1 beta.** Export controls stay beside your chat in Chrome's side panel. Capture and recovery are tested against synthetic browser fixtures, including newer ChatGPT message markers and delayed loading. See [verification](docs/VERIFICATION.md) for the separate live ChatGPT check and remaining provider qualification.
+**v0.4.2 beta.** Export controls stay beside your chat in Chrome's side panel. Capture and recovery are tested against synthetic browser fixtures, including newer ChatGPT message markers and delayed loading. See [verification](docs/VERIFICATION.md) for the separate live ChatGPT check and remaining provider qualification.
 
 ## What it does
 
 - Right-aligned user bubbles, plain assistant answers, bold headings, readable tables and code.
+- ChatGPT visual components retain their rendered cards, icons, colors, and button labels as static PDF images.
 - PDF or Markdown, with only Light/Dark appearance controls.
 - One panel alongside the current chat, with an optional appearance preview. Export does not open or navigate a browser tab.
 - Full-chat scanning with progress, cancellation, ordered capture, and scroll restoration.
@@ -49,7 +50,7 @@ Expand **Preview appearance** to see the first page from currently visible messa
 
 Scanning checks both loaded scroll boundaries and message continuity. It cannot prove hidden branches, attachments, collapsed artifacts, or history that the site never mounts. Detected gaps fail explicitly instead of saving a known partial transcript.
 
-PDF preserves readable text, lists, tables, code, and links. Images become descriptions; math stays as TeX source. The panel uses the native system font, including Apple's system font on macOS. PDFs bundle Inter for a similar appearance, with Courier for code; conversations containing unsupported characters use bundled Noto Sans SC instead. Fonts are fully embedded, so Unicode-heavy PDFs are larger. This layout follows ChatGPT's visual structure; pagination and fonts differ from the original web page.
+PDF preserves readable text, lists, tables, code, and links. ChatGPT's rendered visual components are captured as static images, including their layout, icons, colors, and button labels. Tall components continue across pages at readable scale. Their captured state remains fixed; buttons and animations are not interactive in PDF. Markdown retains their text. Ordinary images become descriptions; images inside visual components that the browser cannot read show an explicit unavailable placeholder. Math stays as TeX source. The panel uses the native system font, including Apple's system font on macOS. PDFs bundle Inter for a similar appearance, with Courier for code; conversations containing unsupported characters use a smaller static Regular instance of bundled Noto Sans SC instead. Fonts remain fully embedded to preserve visible glyphs. This layout follows ChatGPT's visual structure; pagination and fonts differ from the original web page.
 
 Capture limits: 10 minutes and 10,000 messages. PDF also applies content limits, a 64 MB output cap, and a 3-minute rendering deadline. Markdown can recover an oversized captured conversation.
 
@@ -65,7 +66,7 @@ npm run build   # dist/
 npm test        # unit and integration regressions
 ```
 
-Real-browser scripts: `tests/capture-browser.mjs`, `tests/chatgpt-compat-browser.mjs`, `tests/capture-scroll-browser.mjs`, `tests/extension-browser.mjs`, and `tests/side-panel-browser.mjs`. These additionally require Playwright and compatible Chromium. Set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_EXECUTABLE` when using an existing installation. Extension integration uses isolated temporary profiles, synthetic conversations, and test-only host grants. See [verification](docs/VERIFICATION.md) for coverage and live-provider limits.
+Real-browser scripts: `tests/capture-browser.mjs`, `tests/capture-scroll-browser.mjs`, `tests/capture-speed-browser.mjs`, `tests/rich-components-browser.mjs`, `tests/chatgpt-compat-browser.mjs`, `tests/extension-browser.mjs`, and `tests/side-panel-browser.mjs`. These additionally require Playwright and compatible Chromium. The rich-component suite also uses PDF.js's optional `@napi-rs/canvas` dependency, installed by a normal `npm ci`. Set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_EXECUTABLE` when using an existing installation. Extension integration uses isolated temporary profiles, synthetic conversations, and test-only host grants. See [verification](docs/VERIFICATION.md) for coverage and live-provider limits.
 
 ```text
 src/adapters/    Serialized capture engine and provider compatibility

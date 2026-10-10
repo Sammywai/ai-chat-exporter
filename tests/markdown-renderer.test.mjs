@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test("retains visual component text and button labels without embedding raster payloads", () => {
+  const markdown = renderMarkdown({ provider: "chatgpt", title: "Visual fallback", messages: [{ id: "a", role: "assistant", blocks: [
+    { type: "visual", width: 640, height: 400, text: "unit!\n儲存新範例\n<script>unsafe</script>", dataUrl: "data:image/png;base64,AAAA" }
+  ] }] });
+  assert.match(markdown, /儲存新範例/);
+  assert.match(markdown, /\\<script\\>/);
+  assert.doesNotMatch(markdown, /data:image/);
+});
+
 import { renderMarkdown } from "../dist/renderers/markdown.js";
 
 test("renders a normalized ChatGPT conversation as a readable Markdown transcript", () => {

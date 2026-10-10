@@ -1,5 +1,5 @@
 import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, clip, endPath, rectangle, pushGraphicsState, popGraphicsState, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
 
 import {
   providerDisplayName,
@@ -236,7 +236,8 @@ export async function renderPdf(
         : "").join("\n\n"));
     } else {
       for (const block of message.blocks) {
-        drawBlock(context, block);
+        if (block.type === "visual") await drawVisual(context, block);
+        else drawBlock(context, block);
       }
     }
 
@@ -259,6 +260,7 @@ async function embedFonts(document: PDFDocument, conversation: Conversation): Pr
     /\s/.test(character) || characters.has(character.codePointAt(0)!)
   );
   const blockSupported = (block: MessageBlock): boolean => {
+    if (block.type === "visual") return true;
     if (block.type === "table") {
       return block.headers.every(supported) && block.rows.every((row) => row.every(supported));
     }
@@ -283,7 +285,12 @@ async function embedFonts(document: PDFDocument, conversation: Conversation): Pr
   // This bundled font loses visible glyphs with fontkit subsetting even though
   // PDF text extraction succeeds. Keep the existing whole-conversation fallback
   // for unsupported glyphs, including mixed CJK and Latin conversations.
-  const unicode = await document.embedFont(await loadBundledFont("NotoSansSC.ttf"), { subset: false });
+  // Localized Latin digits and ligatures use alternate glyph IDs absent from
+  // pdf-lib's nominal Unicode map. Keep the original searchable characters.
+  const unicode = await document.embedFont(await loadBundledFont("NotoSansSC.ttf"), {
+    subset: false,
+    features: { locl: false, liga: false, clig: false }
+  });
   return { regular: unicode, bold: unicode, mono: unicode };
 }
 
@@ -548,7 +555,31 @@ function drawMessageHeading(
   context.cursor.y -= 24;
 }
 
-function drawBlock(context: PdfContext, block: MessageBlock): void {
+async function drawVisual(context: PdfContext, block: Extract<MessageBlock, { type: "visual" }>): Promise<void> {
+  const image = await context.document.embedPng(block.dataUrl);
+  const width = Math.min(context.layout.bodyWidth, block.width * 0.75);
+  const height = width * image.height / image.width;
+  const x = context.layout.margin + (context.layout.bodyWidth - width) / 2;
+  const pageHeight = A4[1] - context.layout.margin - context.layout.bottomMargin;
+  // Short components stay together. Tall mockups retain readable scale across
+  // page slices instead of shrinking into a tiny thumbnail or losing the end.
+  ensureRoom(context, height <= pageHeight ? height : 24, false);
+  let offset = 0;
+  while (offset < height) {
+    ensureRoom(context, Math.min(24, height - offset), false);
+    const slice = Math.min(height - offset, context.cursor.y - context.layout.bottomMargin);
+    const bottom = context.cursor.y - slice;
+    const page = context.cursor.page;
+    page.pushOperators(pushGraphicsState(), rectangle(x, bottom, width, slice), clip(), endPath());
+    page.drawImage(image, { x, y: context.cursor.y - height + offset, width, height });
+    page.pushOperators(popGraphicsState());
+    context.cursor.y = bottom;
+    offset += slice;
+  }
+  context.cursor.y -= context.metrics.blockGap;
+}
+
+function drawBlock(context: PdfContext, block: Exclude<MessageBlock, { type: "visual" }>): void {
   if (block.type === "heading") {
     drawHeading(context, block);
     return;
@@ -1152,18 +1183,28 @@ function splitLongWord(word: string, font: PDFFont, size: number, width: number)
     return [word];
   }
 
+  const characters = Array.from(word);
   const pieces: string[] = [];
-  let piece = "";
-  for (const character of word) {
-    if (piece && textWidth(font, piece + character, size) > width) {
-      pieces.push(piece);
-      piece = character;
-    } else {
-      piece += character;
+  let start = 0;
+  while (start < characters.length) {
+    // Probe short prefixes before binary search. Measuring every growing
+    // prefix repeatedly shapes the same CJK text and long code tokens.
+    const remaining = characters.length - start;
+    const prefix = (length: number): string => characters.slice(start, start + length).join("");
+    let fitting = 1;
+    let probe = Math.min(2, remaining);
+    while (probe > fitting && textWidth(font, prefix(probe), size) <= width) {
+      fitting = probe;
+      probe = Math.min(probe * 2, remaining);
     }
-  }
-  if (piece) {
-    pieces.push(piece);
+    let upper = probe;
+    while (upper - fitting > 1) {
+      const middle = Math.floor((fitting + upper) / 2);
+      if (textWidth(font, prefix(middle), size) <= width) fitting = middle;
+      else upper = middle;
+    }
+    pieces.push(prefix(fitting));
+    start += fitting;
   }
   return pieces;
 }

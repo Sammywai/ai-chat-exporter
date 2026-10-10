@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Paired layout - ChatGPT</title>
+<style>
+body{margin:0}#chat{height:420px;overflow-y:auto}
+#history{display:flex;flex-direction:column;gap:6px;padding-bottom:20px}
+#canvas{position:relative;flex-shrink:0}article{height:600px}p{margin:0}
+article>div:first-child{height:80px}article>div:last-child{height:520px}
+</style></head><body><main id="chat"><div id="history" data-thread-find-target="conversation" data-chatgpt-conversation-selection-target="true"><span hidden></span><div id="canvas"></div><div style="height:0;flex-shrink:0"></div></div></main>
+<script>
+const mode = new URLSearchParams(location.search).get('mode') || 'margin';
+const chat = document.querySelector('#chat');
+const canvas = document.querySelector('#canvas');
+const gap = mode === 'flex-gap' ? 6 : 0;
+if (gap) {canvas.style.display='flex';canvas.style.flexDirection='column';canvas.style.gap=`${gap}px`}
+for (let index=0;index<2;index++) {
+  if (index && mode === 'spacer') {const spacer=document.createElement('div');spacer.style.height='600px';canvas.append(spacer)}
+  const wrapper=document.createElement('div');
+  wrapper.style.marginTop=index?'12px':'0';
+  const article=document.createElement('article');
+  article.dataset.testid=`conversation-turn-${index}`;
+  for (const role of ['user','assistant']) {
+    const turn=document.createElement('div');
+    turn.dataset.messageAuthorRole=role;
+    turn.dataset.messageId=`turn-${index}-${role}`;
+    const p=document.createElement('p');p.textContent=`Pair ${index} ${role}`;turn.append(p);article.append(turn);
+  }
+  wrapper.append(article);canvas.append(wrapper);
+}
+canvas.style.height=`${1200+12+gap+(mode==='spacer'?600:0)+(mode==='tail'?600:0)}px`;
+chat.scrollTop=Math.floor((chat.scrollHeight-chat.clientHeight)*.45);
+let scrollEvents=0;
+chat.addEventListener('scroll',()=>scrollEvents++);
+window.fixture={chat,get scrollEvents(){return scrollEvents}};
+</script></body></html>

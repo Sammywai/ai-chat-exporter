@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rich generated design components</title>
+  <!-- Hand-authored synthetic layouts, copy, and vectors for export regression tests. -->
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0d0d0d; color: #ececec; font: 18px/1.45 Arial, sans-serif; }
+    main { width: 960px; margin: auto; padding: 30px; }
+    h2 { font-size: 30px; margin: 28px 0 18px; }
+    h3 { margin: 16px 0; font-size: 24px; }
+    p { margin: 12px 0; }
+    button { font: inherit; cursor: pointer; border: 0; }
+    .mockup { width: 540px; margin: 22px auto; padding: 24px; color: #25223b; background: #fff8ee; border: 2px solid #ddd6ca; border-radius: 26px; }
+    .mockup header { display: flex; align-items: center; gap: 12px; }
+    .logo { padding: 10px 16px; background: #6243ef; color: white; border-radius: 12px; font-size: 30px; font-weight: bold; }
+    .save { margin-left: auto; background: #efe7ff; color: #6243ef; border-radius: 28px; padding: 14px; }
+    .eyebrow { margin-top: 28px; color: #6243ef; font-size: 16px; font-weight: bold; }
+    .hero { margin: 10px 0; font-size: 32px; }
+    .muted { color: #7b7284; }
+    .goal { background: #efe7ff; padding: 18px; border-radius: 18px; margin: 20px 0; }
+    .goal header { justify-content: space-between; }
+    .goal strong:last-child { color: #6243ef; font-size: 16px; }
+    .beats { display: flex; gap: 6px; margin: 16px 0 10px; }
+    .beats i { flex: 1; height: 12px; background: #d9ccf4; border-radius: 8px; }
+    .beats i:first-child { background: #6243ef; }
+    .lesson { background: #6243ef; color: white; padding: 22px; border-radius: 18px; }
+    .lesson mark { background: #ddfa84; color: #25223b; padding: 6px 10px; border-radius: 18px; }
+    .start { display: block; width: 100%; margin-top: 22px; padding: 12px; border-radius: 12px; background: #ddfa84; color: #25223b; font-weight: bold; }
+    .tabs { display: flex; justify-content: space-between; gap: 8px; margin-top: 22px; }
+    .tabs button { background: transparent; color: #7b7284; padding: 4px; }
+    .tabs button:first-child { color: #6243ef; font-weight: bold; }
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .card { min-height: 256px; padding: 20px; color: #25223b; border-radius: 20px; }
+    .lavender { background: #eee8ff; }
+    .cream { background: #fff2e5; }
+    .green { background: #f0f5d9; }
+    .blue { background: #e6f2fb; }
+    .pick { width: 82px; height: 96px; }
+    .spark { width: 26px; height: 26px; float: right; margin-top: 36px; }
+    .banner { background: #ff9269; padding: 12px; text-align: center; font-size: 24px; font-weight: bold; border-radius: 14px; }
+    .card p { color: #635976; }
+    .mini-beats { display: flex; gap: 6px; }
+    .mini-beats span { flex: 1; text-align: center; padding: 4px; border-radius: 8px; background: #dfebbc; }
+    .mini-beats span:nth-child(-n+3) { background: #b6dc5f; }
+    .feedback { padding: 12px; background: white; border: 2px solid #bfcede; border-radius: 12px; color: #294a65; font-weight: bold; }
+    .sequence { background: #0d0d0d; padding: 8px 0; }
+    .step { display: flex; align-items: center; gap: 24px; padding: 24px 12px; border-bottom: 1px solid #242424; }
+    .step:last-child { border: 0; }
+    .step svg { flex-shrink: 0; width: 36px; height: 36px; }
+    .step h3 { margin: 0 0 8px; }
+    .step p { color: #c7c7c7; margin: 0; }
+    .step .current { margin-left: auto; background: #082615; color: #01c75a; border-radius: 24px; padding: 8px 14px; }
+    .toolbar { display: flex; gap: 10px; margin-top: 20px; }
+    .toolbar button { padding: 8px; }
+  </style>
+</head>
+<body>
+  <main>
+    <article data-chatgpt-search-unit-key="turn-0:user">
+      <button data-user-message-bubble>Capture this synthetic layout example.</button>
+    </article>
+    <article data-chatgpt-search-unit-key="turn-1:assistant">
+      <div data-dil-message-id="design-answer" class="markdown">
+        <h2>02. A synthetic layout for export tests</h2>
+        <p>This local fixture includes five sample navigation buttons.</p>
+        <div data-d-component="box" class="mockup" id="mockup">
+          <header><span class="logo">unit!</span><span class="muted">介面元件範例</span><button class="save">☆ 範例標記</button></header>
+          <p class="eyebrow">HELLO, SAMPLE PANEL!</p>
+          <h3 class="hero">今天檢查新元件！</h3>
+          <p class="muted">這是測試範例，請查看第一組元件。</p>
+          <div data-d-component="box" class="goal">
+            <header><strong>今日測試項</strong><strong>5 個項目完成</strong></header>
+            <div class="beats"><i></i><i></i><i></i><i></i><i></i></div>
+            <p class="muted">測試進度 · 每個項目都有值</p>
+          </div>
+          <div data-d-component="box" class="lesson">
+            <mark>SAMPLE PANEL 01</mark><h3>第一組元件，第一項測試。</h3><p>使用範例 A 資料。</p>
+            <button class="start">開啟範例 →</button>
+          </div>
+          <nav class="tabs"><button>項目</button><button>摘要</button><button>圖表</button><button>記錄</button><button>設定</button></nav>
+        </div>
+        <h2>Synthetic cards used for visual regression checks</h2>
+        <div data-d-component="grid" class="cards" id="cards">
+          <div data-d-component="box" class="card lavender">
+            <svg class="pick" viewBox="0 0 100 118" aria-hidden="true"><path d="M50 4 C2 4 0 40 13 62 C26 85 47 111 50 114 C54 111 76 86 88 62 C103 36 99 4 50 4Z" fill="#ddfa84" stroke="#25223b" stroke-width="4"/><path d="M51 38V68M51 39L65 45V53M52 69C52 79 37 80 37 72C37 64 52 62 52 69" fill="none" stroke="#25223b" stroke-width="4"/></svg>
+            <svg class="spark" viewBox="0 0 28 28" aria-hidden="true"><path d="M14 2L17 10L25 14L17 18L14 26L10 18L2 14L10 10Z" fill="none" stroke="#6243ef" stroke-width="2"/></svg>
+            <h3>Outlined symbols</h3><p>Preserve an outlined vector symbol beside synthetic card text.</p>
+          </div>
+          <div data-d-component="box" class="card cream"><div class="banner">TEST READY</div><h3>Colored headings</h3><p>A sample banner checks the fill color, spacing, and alignment.</p></div>
+          <div data-d-component="box" class="card green"><div class="mini-beats"><span>✓</span><span>✓</span><span>✓</span><span> </span><span> </span></div><h3>Segmented status</h3><p>Five sample segments check alignment and completed item marks.</p></div>
+          <div data-d-component="box" class="card blue"><div class="feedback">測試完成，請查看新範例！</div><h3>Sample message</h3><p>Synthetic example content checks that visible text stays readable.</p></div>
+        </div>
+        <h2>05. Synthetic export sequence</h2>
+        <div data-d-component="box" class="sequence" id="sequence">
+          <div data-d-component="row" class="step"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M3 17L20 5L37 17M8 15V35H32V15M16 35V24H24V35" fill="none" stroke="#ececec" stroke-width="3" stroke-linejoin="round"/></svg><div><h3>First: Setup</h3><p>Load local sample content, navigation labels, and test components.</p></div><span class="current">Active</span></div>
+          <div data-d-component="row" class="step"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 10C13 5 6 5 3 6V33C9 30 14 30 20 35C26 30 31 30 37 33V6C30 5 26 5 20 10V35" fill="none" stroke="#ececec" stroke-width="3" stroke-linejoin="round"/></svg><div><h3>Next: Capture</h3><p>Capture text, vector shapes, progress segments, and action controls.</p></div></div>
+          <div data-d-component="row" class="step"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M25 14L36 3L39 6L28 17M22 14C11 6 7 17 9 22C-2 26 5 40 15 35C20 34 23 29 22 25C32 27 31 18 22 14Z" fill="none" stroke="#ececec" stroke-width="3"/></svg><div><h3>Then: Validate</h3><p>Compare captured pixels with the source layout and visible labels.</p></div></div>
+          <div data-d-component="row" class="step"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M18 6V28M18 6L30 12M18 28C18 39 3 39 3 31C3 23 18 21 18 28" fill="none" stroke="#ececec" stroke-width="3"/></svg><div><h3>Finally: Files and Checks</h3><p>Save the generated test document and inspect all sample elements.</p></div></div>
+        </div>
+        <p>Closing paragraph after all visual components.</p>
+        <div class="toolbar"><button data-testid="copy-turn-action-button">Copy response</button><button aria-label="Good response">Good response</button><button>Regenerate</button></div>
+      </div>
+    </article>
+  </main>
+</body>
+</html>

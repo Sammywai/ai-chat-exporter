@@ -21,6 +21,9 @@ function renderMessage(message: ConversationMessage, provider: string): string {
 }
 
 function renderBlock(block: ConversationMessage["blocks"][number]): string {
+  if (block.type === "visual") {
+    return `> Visual component (static in PDF)\n\n${escapeMarkdownText(block.text)}`;
+  }
   if (block.type === "heading") {
     return `${"#".repeat(Math.min(block.level + 1, 6))} ${escapeMarkdownText(block.text)}`;
   }

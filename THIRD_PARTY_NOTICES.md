@@ -9,14 +9,80 @@ Original AI Chat Exporter code is covered by [LICENSE.md](LICENSE.md). That lice
 | `pdf-lib` | 1.17.1 | MIT | `licenses/pdf-lib-LICENSE.md` |
 | `@pdf-lib/fontkit` | 1.1.1 | MIT, with embedded third-party components | `licenses/fontkit-NOTICES.md` (this document) |
 | `pdfjs-dist` | 5.4.624 | Apache-2.0 | `licenses/pdfjs-dist-LICENSE`, `licenses/pdfjs-dist-NOTICE.txt` |
-| `@pdf-lib/standard-fonts` | 1.0.0 | MIT | `licenses/pdf-lib-standard-fonts-LICENSE.md` |
+| `@pdf-lib/standard-fonts` | 1.0.0 | MIT; Adobe AFM metric terms | `licenses/pdf-lib-standard-fonts-LICENSE.md`, original `afm` and Adobe notices below |
 | `@pdf-lib/upng` | 1.0.1 | MIT | `licenses/pdf-lib-upng-LICENSE` |
 | `pako` | 1.0.11 | MIT and Zlib | `licenses/pako-LICENSE`, `licenses/pako-zlib-NOTICE.txt` |
 | `tslib` | 1.14.1 | 0BSD | `licenses/tslib-LICENSE.txt`, `licenses/tslib-CopyrightNotice.txt` |
 
 The build copies complete installed license texts into `dist/licenses/`, together with PDF.js and zlib source notices and the embedded Fontkit notices below. `dist/licenses/manifest.json` records installed versions and associated files. No network access is needed to build these notices. Node-only optional packages and development tools are not shipped in the browser bundles.
 
+## Standard-font metrics upstream notice
+
+The published `@pdf-lib/standard-fonts` 1.0.0 README identifies this package as a fork of `chbrown/afm` and preserves the original project's MIT attribution. Its standalone license covers Andrew Dillon's fork; the original attribution is retained here as well.
+
+Sources: [published package README](https://github.com/Hopding/standard-fonts/blob/master/README.md), [original author's MIT terms](https://chbrown.github.io/licenses/MIT/#2015-2018).
+
+```text
+MIT License
+
+Copyright 2015–2018 Christopher Brown.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### Adobe Core 14 AFM metrics
+
+`@pdf-lib/standard-fonts` 1.0.0 retains Adobe Core 14 font metric data. Upstream converted the AFM files to JSON, then compressed the data for this package. AI Chat Exporter bundles those existing transformed metrics without further metric edits. These are width and encoding data, not bundled Adobe font programs. The permission paragraph and all distinct copyright/trademark notices retained in the 14 installed font records follow.
+
+Sources: [original `afm` download recipe](https://github.com/chbrown/afm/blob/master/Makefile), [Core 14 permission text retained by Matplotlib](https://github.com/matplotlib/matplotlib/blob/main/lib/matplotlib/mpl-data/fonts/pdfcorefonts/readme.txt), installed `@pdf-lib/standard-fonts` 1.0.0 `Font.load(name).Notice` records.
+
+```text
+This file and the 14 PostScript(R) AFM files it accompanies may be used, copied,
+and distributed for any purpose and without charge, with or without modification,
+provided that all copyright notices are retained; that the AFM files are not
+distributed without this file; that all modifications to this file or any of
+the AFM files are prominently noted in the modified file(s); and that this
+paragraph is not modified. Adobe Systems has no responsibility or obligation
+to support the use of the AFM files.
+
+Courier and Courier-Oblique:
+Copyright (c) 1989, 1990, 1991, 1992, 1993, 1997 Adobe Systems Incorporated.  All Rights Reserved.
+
+Courier-Bold and Courier-BoldOblique:
+Copyright (c) 1989, 1990, 1991, 1993, 1997 Adobe Systems Incorporated.  All Rights Reserved.
+
+Helvetica, Helvetica-Bold, Helvetica-Oblique and Helvetica-BoldOblique:
+Copyright (c) 1985, 1987, 1989, 1990, 1997 Adobe Systems Incorporated.  All Rights Reserved.Helvetica is a trademark of Linotype-Hell AG and/or its subsidiaries.
+
+Times-Roman, Times-Bold, Times-Italic and Times-BoldItalic:
+Copyright (c) 1985, 1987, 1989, 1990, 1993, 1997 Adobe Systems Incorporated.  All Rights Reserved.Times is a trademark of Linotype-Hell AG and/or its subsidiaries.
+
+Symbol:
+Copyright (c) 1985, 1987, 1989, 1990, 1997 Adobe Systems Incorporated. All rights reserved.
+
+ZapfDingbats:
+Copyright (c) 1985, 1987, 1988, 1989, 1997 Adobe Systems Incorporated. All Rights Reserved.ITC Zapf Dingbats is a registered trademark of International Typeface Corporation.
+```
+
 ## Bundled fonts
+
+Noto Sans SC is bundled as a static Regular instance (weight 400, font metadata version `2.004-H2`) generated from the [Google Fonts Noto Sans SC variable font](https://github.com/google/fonts/blob/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf) using `scripts/prepare-unicode-font.py`. The original variable font is byte-for-byte identical to the official upstream file checked during release preparation (SHA-256 `a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da`). Its existing SIL Open Font License remains included in the package. The reserved font name is `Source`; this modified static instance retains the `Noto Sans SC` family name.
 
 `static/assets/NotoSansSC.ttf` is distributed under the SIL Open Font License 1.1. Its complete license remains at `assets/NotoSansSC-LICENSE.txt` in the extension package.
 
@@ -66,6 +132,50 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+### Unicode data in the Fontkit helpers
+
+Fontkit's prebundled Unicode-property tables derive from Unicode character data through its Unicode-property/codepoint helpers. Their MIT code notices above do not replace the Unicode data permission notice. The exact Unicode data revision is not exposed by the published Fontkit 1.1.1 bundle. AI Chat Exporter retains the existing helper tables without regenerating them; upstream converts character data into JSON and compressed trie tables.
+
+Sources: [Unicode-property generator](https://github.com/foliojs/unicode-properties/blob/master/generate.js), [official Unicode data permission notice](https://www.unicode.org/license.txt). The generator link explains the upstream transformation; it does not establish an exact revision for the prebundled data. The following is the current official Unicode permission notice retained separately from the helper code licenses.
+
+```text
+UNICODE LICENSE V3
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright © 1991-2026 Unicode, Inc.
+
+NOTICE TO USER: Carefully read the following legal agreement. BY
+DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of data files and any associated documentation (the "Data Files") or
+software and any associated documentation (the "Software") to deal in the
+Data Files or Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, and/or sell
+copies of the Data Files or Software, and to permit persons to whom the
+Data Files or Software are furnished to do so, provided that either (a)
+this copyright and permission notice appear with all copies of the Data
+Files or Software, or (b) this copyright and permission notice appear in
+associated Documentation.
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+THIRD PARTY RIGHTS.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+FILES OR SOFTWARE.
+Except as contained in this notice, the name of a copyright holder shall
+not be used in advertising or otherwise to promote the sale, use or other
+dealings in these Data Files or Software without prior written
+authorization of the copyright holder.
 ```
 
 ### base64-arraybuffer — license source 0.1.5

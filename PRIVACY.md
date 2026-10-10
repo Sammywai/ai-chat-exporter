@@ -4,7 +4,7 @@ AI Chat Exporter is designed to process conversation data locally.
 
 ## Data handled
 
-When you invoke the extension on a supported AI chat, it reads currently mounted conversation content and, during export, scrolls that tab to load earlier and later messages so it can create the requested PDF or Markdown file. This can include the conversation title, speaker roles, messages, headings, tables, and code.
+When you invoke the extension on a supported AI chat, it reads currently mounted conversation content and, during export, scrolls that tab to load earlier and later messages so it can create the requested PDF or Markdown file. This can include the conversation title, speaker roles, messages, headings, tables, code, and rendered visual components. Visual components can include button labels, visible progress, canvas contents, and other currently displayed states; they are preserved as static images in PDF and text in Markdown.
 
 Completed captures are held in the side panel's memory for retry or format changes. They are discarded when you rescan, reload, or close that panel; the extension does not persist a chat database. Progress events contain a job identifier, stage, and message count, and are sent only within the extension.
 
@@ -22,6 +22,8 @@ AI Chat Exporter does not include:
 - code that sends conversation content to the project maintainer.
 
 Bundled PDF fonts are loaded from the installed extension package. No remote font service is used. The `sidePanel` permission displays export controls alongside the current chat; it does not grant additional site access.
+
+Visual capture uses styles and pixels from the rendered page. Preparing a readable layout may cause the browser to reload resources already referenced by that page. Generated PNG snapshots contain pixels rather than external resource links. Images the browser cannot read appear as unavailable placeholders.
 
 ## Third-party sites
 

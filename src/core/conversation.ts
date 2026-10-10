@@ -15,6 +15,7 @@ export type MessageBlock =
   | { type: "table"; headers: string[]; rows: string[][]; inlineFormat?: "markdown" }
   | { type: "code"; language?: string; code: string }
   | { type: "math"; tex: string; display: boolean }
+  | { type: "visual"; dataUrl: string; width: number; height: number; text: string }
   | { type: "image"; alt: string; sourceUrl: string };
 
 export interface ConversationMessage {
@@ -73,6 +74,7 @@ function assertConversationWithinLimits(conversation: ConversationDraft): void {
   }
 
   let totalCharacters = conversation.title.length;
+  let totalVisualBytes = 0;
   for (const message of conversation.messages) {
     if (message.blocks.length > CONVERSATION_LIMITS.blocksPerMessage) {
       throw new ConversationLimitError();
@@ -80,6 +82,16 @@ function assertConversationWithinLimits(conversation: ConversationDraft): void {
 
     totalCharacters += message.id.length;
     for (const block of message.blocks) {
+      if (block.type === "visual") {
+        totalVisualBytes += block.dataUrl.length;
+        if (totalVisualBytes > 64_000_000) throw new ConversationLimitError();
+      }
+      if (block.type === "visual" && (!/^data:image\/png;base64,/.test(block.dataUrl)
+        || !Number.isFinite(block.width) || !Number.isFinite(block.height)
+        || block.width <= 0 || block.height <= 0 || block.width * block.height > 16_000_000
+        || block.dataUrl.length > 8_000_000)) {
+        throw new ConversationLimitError();
+      }
       const blockCharacters = countBlockCharacters(block);
       if (blockCharacters > CONVERSATION_LIMITS.charactersPerBlock) {
         throw new ConversationLimitError();
@@ -93,6 +105,8 @@ function assertConversationWithinLimits(conversation: ConversationDraft): void {
 }
 
 function countBlockCharacters(block: MessageBlock): number {
+  // Raster data has its own bound; keep the existing transcript text budget.
+  if (block.type === "visual") return block.text.length;
   if (block.type === "table") {
     if (block.rows.length > CONVERSATION_LIMITS.tableRows) {
       throw new ConversationLimitError();
@@ -133,6 +147,7 @@ function countBlockCharacters(block: MessageBlock): number {
 }
 
 function toPreviewBlock(block: MessageBlock): MessageBlock {
+  if (block.type === "visual") return { ...block, text: truncate(block.text, 2_000) };
   if (block.type === "table") {
     return {
       type: "table",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { createCanvas } from "@napi-rs/canvas";
 import { getDocument as loadPdfDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 import { normalizePdfText, renderPdf } from "../dist/renderers/pdf.js";
@@ -387,6 +388,88 @@ test("embeds the reliable Unicode font and renders Chinese conversation content"
   assert.match(text.items.map((item) => item.str).join(""), /Mixed-script text remains readable/);
   assert.match(text.items.map((item) => item.str).join(""), /print\("中文"\)/);
   await doc.destroy();
+});
+
+test("preserves mixed Latin and Chinese digits, color values, and original ligature sequences", async () => {
+  const sample = "Color #FFF8EF 0123456789 中文 office efficient affinity";
+  const chineseFirst = "中文 office efficient affinity";
+  const code = "const id = 0123456789; // 中文 office efficient affinity";
+  const pdf = await renderPdf({
+    provider: "chatgpt",
+    title: "Mixed Unicode text regression",
+    messages: [{ id: "mixed", role: "assistant", blocks: [
+      { type: "paragraph", text: sample },
+      { type: "paragraph", text: chineseFirst },
+      { type: "code", code }
+    ] }]
+  });
+  const document = await getDocument({ data: pdf.slice() }).promise;
+  const page = await document.getPage(1);
+  const content = await page.getTextContent({ disableNormalization: true });
+  const text = content.items.map((item) => item.str).join(" ");
+  assert.ok(text.includes(sample), `Mixed-script body text changed: ${text}`);
+  assert.ok(text.includes(chineseFirst), `Chinese-first ligature sequence changed: ${text}`);
+  assert.ok(text.includes(code), `Mixed-script code text changed: ${text}`);
+  assert.doesNotMatch(text, /[\uFB00-\uFB06]/, "searchable text must retain individual Latin characters");
+  await document.destroy();
+});
+
+test("renders every Unicode fallback digit and Chinese glyph visibly with the static regular font", async () => {
+  const glyphs = Array.from("0123456789中文測試");
+  const pdf = await renderPdf({
+    provider: "chatgpt",
+    title: "Unicode raster regression",
+    messages: [{ id: "glyphs", role: "assistant", blocks: glyphs.map((text) => ({ type: "paragraph", text })) }]
+  });
+  assert.ok(pdf.length > 100_000 && pdf.length < 7_000_000,
+    "Unicode font must remain complete while omitting unused variable weights");
+  const document = await getDocument({ data: pdf.slice() }).promise;
+  const page = await document.getPage(1);
+  const content = await page.getTextContent();
+  const viewport = page.getViewport({ scale: 2 });
+  const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+  const context = canvas.getContext("2d");
+  await page.render({ canvasContext: context, viewport }).promise;
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  for (const glyph of glyphs) {
+    const item = content.items.find((item) => item.str === glyph);
+    assert.ok(item, `${glyph} missing from PDF text`);
+    assert.match(page.commonObjs.get(item.fontName).name, /NotoSansSC-Regular/);
+    const left = Math.floor(item.transform[4] * 2);
+    const right = Math.ceil((item.transform[4] + item.width) * 2);
+    const top = Math.floor(viewport.height - (item.transform[5] + item.height) * 2);
+    const bottom = Math.ceil(viewport.height - item.transform[5] * 2);
+    let ink = 0;
+    for (let y = Math.max(0, top); y < Math.min(canvas.height, bottom); y += 1) {
+      for (let x = Math.max(0, left); x < Math.min(canvas.width, right); x += 1) {
+        const offset = (y * canvas.width + x) * 4;
+        if (pixels[offset] < 150 && pixels[offset + 1] < 150 && pixels[offset + 2] < 150) ink += 1;
+      }
+    }
+    assert.ok(ink > 3, `${glyph} extracts correctly but has no visible glyph`);
+  }
+  await document.destroy();
+});
+
+test("wraps long unbroken tokens without losing characters or crossing page margins", async () => {
+  const token = "UNBROKEN_code_0123456789_".repeat(80);
+  const pdf = await renderPdf({
+    provider: "chatgpt",
+    title: "Long token regression",
+    messages: [{ id: "token", role: "assistant", blocks: [{ type: "paragraph", text: token }] }]
+  });
+  const document = await getDocument({ data: pdf.slice() }).promise;
+  let extracted = "";
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
+    const content = await page.getTextContent();
+    for (const item of content.items.filter((item) => item.str && item.transform[5] > 40 && item.transform[5] < 760)) {
+      extracted += item.str;
+      assert.ok(item.transform[4] + item.width <= page.view[2] - 35, `long token exceeds page margin: ${item.str}`);
+    }
+  }
+  assert.equal(extracted, token);
+  await document.destroy();
 });
 
 test("paginates long paragraphs, code, and table rows without clipping or content loss", async () => {

@@ -104,3 +104,14 @@ test("creates a bounded preview without mutating the export conversation", () =>
   assert.equal(conversation.messages.length, 8);
   assert.equal(conversation.messages[0].blocks[0].text.length, 3_000);
 });
+
+test("bounds visual dimensions and aggregate raster data before rendering", () => {
+  const draft = (blocks) => ({ provider: "chatgpt", title: "Visual limits", messages: [{ id: "a", role: "assistant", blocks }] });
+  const visual = { type: "visual", width: 640, height: 400, text: "Buttons and icons", dataUrl: "data:image/png;base64,AAAA" };
+  assert.equal(createConversationPreview(createConversation(draft([visual]))).messages[0].blocks[0].dataUrl, visual.dataUrl);
+  for (const invalid of [{ width: 0 }, { height: Infinity }, { width: 5000, height: 5000 }, { dataUrl: "https://example.com/image.png" }]) {
+    assert.throws(() => createConversation(draft([{ ...visual, ...invalid }])), ConversationLimitError);
+  }
+  const large = { ...visual, dataUrl: `data:image/png;base64,${"A".repeat(7_200_000)}` };
+  assert.throws(() => createConversation(draft(Array(9).fill(large))), ConversationLimitError);
+});

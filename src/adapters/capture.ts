@@ -51,6 +51,13 @@ export async function captureConversation(provider: Provider, options: CaptureOp
   let lastProgressCount = -1;
   let lastOwnerAck = started;
   let hadInitialMessages = false;
+  const visualCache = new WeakMap<Element, { signature: string; block: Extract<MessageBlock, { type: "visual" }> }>();
+  const visualRasters = new Map<string, Promise<string>>();
+  let mutationVersion = 0;
+  let mutationObserver: MutationObserver | null = null;
+  let settledSignature = "";
+  let settledQuietSince = started;
+  let settledMutationVersion = -1;
 
   function scrollEnd(): number {
     return scroller ? Math.max(0, scroller.scrollHeight - scroller.clientHeight) : 0;
@@ -137,13 +144,242 @@ export async function captureConversation(provider: Provider, options: CaptureOp
     return text;
   }
 
+  function visualFor(element: HTMLElement): Extract<MessageBlock, { type: "visual" }> {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    // The native panel can squeeze a chat down to a few characters per line.
+    // Render responsive components in an offscreen export layout, keeping fixed
+    // widths and maximum widths (such as the 390 px phone mockup) intact.
+    const fixedWidth = /^\d+(?:\.\d+)?px$/.test(element.style.width);
+    const minimumWidth = Math.min(640, parseFloat(style.maxWidth) || 640);
+    if (document.documentElement.clientWidth >= 480 || rect.width >= minimumWidth || fixedWidth || style.display.startsWith("inline")) return serializeVisual(element);
+    const signature = `wide:${minimumWidth}:${style.color}:${style.backgroundColor}:${element.outerHTML}`;
+    const cached = visualCache.get(element);
+    if (cached?.signature === signature) return cached.block;
+    const host = document.createElement("div");
+    host.setAttribute("data-ai-chat-snapshot-host", "");
+    host.style.cssText = `position:fixed;left:-100000px;top:0;width:${minimumWidth}px;visibility:visible;pointer-events:none;contain:layout style paint;`;
+    const staged = element.cloneNode(true) as HTMLElement;
+    for (const node of [staged, ...staged.querySelectorAll("*")]) {
+      // A mounted clone restarts streamed-word fades. Disable motion before
+      // layout so serialization cannot freeze their backwards-fill opacity.
+      const copy = node as HTMLElement | SVGElement;
+      copy.style.setProperty("animation", "none", "important");
+      copy.style.setProperty("transition", "none", "important");
+      for (const attribute of Array.from(node.attributes)) {
+        if (/^on/i.test(attribute.name) || ["name", "data-message-author-role", "data-message-role", "data-chatgpt-search-unit-key"].includes(attribute.name)) node.removeAttribute(attribute.name);
+      }
+    }
+    staged.querySelectorAll("script,style,iframe,object,embed").forEach(node => node.remove());
+    staged.style.setProperty("width", `${minimumWidth}px`);
+    staged.style.setProperty("height", "auto");
+    staged.style.setProperty("margin", "0");
+    staged.style.setProperty("content-visibility", "visible");
+    host.append(staged);
+    // The original parent supplies inherited CSS variables, theme and fonts.
+    element.parentElement!.append(host);
+    try {
+      const originalCanvases = element.querySelectorAll("canvas");
+      staged.querySelectorAll("canvas").forEach((canvas, index) => canvas.getContext("2d")?.drawImage(originalCanvases[index], 0, 0));
+      const block = serializeVisual(staged);
+      block.text = element.innerText.trim();
+      visualCache.set(element, { signature, block });
+      return block;
+    } finally { host.remove(); }
+  }
+
+  function serializeVisual(element: HTMLElement): Extract<MessageBlock, { type: "visual" }> {
+    const rect = element.getBoundingClientRect();
+    const width = Math.ceil(rect.width);
+    const height = Math.ceil(rect.height);
+    if (width <= 0 || height <= 0 || width * height > 16_000_000) {
+      throw new Error("A visual component is too large or not rendered. Expand the chat and retry; no incomplete file was saved.");
+    }
+    const rootStyle = getComputedStyle(element);
+    const signature = `${width}:${height}:${rootStyle.color}:${rootStyle.backgroundColor}:${element.outerHTML}`;
+    const cached = visualCache.get(element);
+    if (cached?.signature === signature) return cached.block;
+    const clone = element.cloneNode(true) as HTMLElement;
+    const originals = [element, ...element.querySelectorAll("*")];
+    const copies = [clone, ...clone.querySelectorAll("*")];
+    // Freeze resolved CSS, including inherited colors and layout. No page CSS,
+    // scripts, event handlers, or remote resources execute in the snapshot.
+    const properties = ["display", "box-sizing", "position", "top", "right", "bottom", "left", "width", "height", "min-width", "max-width", "min-height", "max-height", "padding", "margin", "border", "border-top", "border-right", "border-bottom", "border-left", "border-radius", "background-color", "background-image", "background-size", "background-position", "background-clip", "background-origin", "color", "font-family", "font-size", "font-weight", "font-style", "font-synthesis", "line-height", "letter-spacing", "text-align", "text-decoration", "text-transform", "white-space", "overflow-wrap", "word-break", "overflow", "opacity", "box-shadow", "flex", "flex-direction", "flex-wrap", "align-items", "align-self", "justify-content", "gap", "row-gap", "column-gap", "grid-template-columns", "grid-template-rows", "grid-column", "grid-row", "object-fit", "aspect-ratio", "float", "clear", "vertical-align", "transform", "transform-origin", "fill", "stroke", "clip-path", "mask", "filter"];
+    const currentDocument = new URL(location.href);
+    currentDocument.hash = "";
+    for (let index = 0; index < originals.length; index++) {
+      const source = originals[index];
+      const copy = copies[index] as HTMLElement | SVGElement;
+      const style = getComputedStyle(source);
+      for (const attribute of Array.from(copy.attributes)) {
+        // SVG local fragment references (use/gradients/clip paths) require IDs.
+        if (/^on/i.test(attribute.name) || ["class", "srcset", "loading"].includes(attribute.name)) copy.removeAttribute(attribute.name);
+      }
+      copy.removeAttribute("style");
+      for (const property of properties) {
+        const value = style.getPropertyValue(property);
+        if (!value) continue;
+        if (!/url\(/i.test(value)) {
+          copy.style.setProperty(property, value);
+          continue;
+        }
+        let externalReference = false;
+        // Resolved CSS may expand a local SVG fragment into an absolute URL.
+        // Keep only same-document references, normalized for the snapshot.
+        const normalizedValue = value.replace(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi, (_match, quoted, singleQuoted, unquoted) => {
+          try {
+            const reference = new URL((quoted ?? singleQuoted ?? unquoted ?? "").trim(), document.baseURI);
+            const fragment = reference.hash;
+            reference.hash = "";
+            if (fragment && reference.href === currentDocument.href) return `url("${fragment}")`;
+          } catch { /* Unreadable references are omitted with external ones. */ }
+          externalReference = true;
+          return "";
+        });
+        if (!externalReference) copy.style.setProperty(property, normalizedValue);
+      }
+      // Intrinsic DIL labels must remeasure against the snapshot's font metrics.
+      // A frozen glyph-tight used width can wrap even when the source fit on one
+      // line. Typed OM preserves authored class/percentage/fixed widths here.
+      if (source instanceof HTMLElement
+        && source.matches('[data-d-component="text"], [data-d-component="title"], [data-d-component="caption"]')
+        && !source.style.getPropertyValue("width")
+        && source.computedStyleMap().get("width")?.toString() === "auto"
+        && source.parentElement
+        && /^(inline-)?flex$/.test(getComputedStyle(source.parentElement).display)) {
+        copy.style.setProperty("width", "auto");
+      }
+      copy.style.setProperty("animation", "none");
+      copy.style.setProperty("transition", "none");
+      copy.style.setProperty("content-visibility", "visible");
+      if (source instanceof HTMLCanvasElement) {
+        const image = document.createElement("img");
+        image.style.cssText = copy.style.cssText;
+        try { image.src = source.toDataURL("image/png"); }
+        catch { throw new Error("The browser could not read a canvas in a visual component. No incomplete PDF was saved."); }
+        copy.replaceWith(image);
+      }
+      if (source instanceof HTMLImageElement) {
+        const src = source.currentSrc || source.src;
+        if (/^data:image\//i.test(src)) copy.setAttribute("src", src);
+        else {
+          // Reuse already loaded pixels only. Cross-origin images without CORS
+          // remain an explicit placeholder instead of tainting the whole card.
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = source.naturalWidth;
+            canvas.height = source.naturalHeight;
+            if (!canvas.width || !canvas.height) throw new Error("Image not loaded");
+            canvas.getContext("2d")!.drawImage(source, 0, 0);
+            copy.setAttribute("src", canvas.toDataURL("image/png"));
+          } catch {
+            copy.removeAttribute("src");
+            copy.setAttribute("alt", `${source.alt || "Image"} (image unavailable)`);
+          }
+        }
+      }
+      if (source instanceof HTMLInputElement) {
+        if (source.checked) copy.setAttribute("checked", "");
+        copy.setAttribute("value", source.value);
+      }
+    }
+    clone.querySelectorAll("script,style,iframe,object,embed").forEach((node) => node.remove());
+    clone.style.setProperty("margin", "0");
+    clone.style.setProperty("width", `${width}px`);
+    clone.style.setProperty("height", `${height}px`);
+    clone.style.setProperty("transform", "none");
+    clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+    // Transparent layouts need the source surface, not the chosen PDF palette.
+    let backdrop: Element | null = element;
+    let background = "white";
+    while (backdrop) {
+      const color = getComputedStyle(backdrop).backgroundColor;
+      if (color !== "transparent" && color !== "rgba(0, 0, 0, 0)") { background = color; break; }
+      backdrop = backdrop.parentElement;
+    }
+    const markup = new XMLSerializer().serializeToString(clone);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;background:${background}">${markup}</div></foreignObject></svg>`;
+    const block: Extract<MessageBlock, { type: "visual" }> = {
+      type: "visual", width, height, text: element.innerText.trim(),
+      dataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    };
+    visualCache.set(element, { signature, block });
+    return block;
+  }
+
+  async function rasterizeVisuals(): Promise<void> {
+    let totalVisualBytes = 0;
+    for (const message of messages) {
+      for (const block of message.blocks) {
+        if (block.type !== "visual") continue;
+        if (block.dataUrl.startsWith("data:image/png;")) {
+          totalVisualBytes += block.dataUrl.length;
+          if (totalVisualBytes > 64_000_000) throw new Error("Visual components exceed the export size limit. Export a smaller conversation.");
+          continue;
+        }
+        check();
+        progress("Preserving visual components");
+        let raster = visualRasters.get(block.dataUrl);
+        if (!raster) {
+          const svgUrl = block.dataUrl;
+          raster = new Promise<string>((resolve, reject) => {
+            const image = new Image();
+            const timer = window.setTimeout(() => reject(new Error("Visual capture timed out. Retry with the chat fully loaded.")), 10_000);
+            image.onload = () => {
+              window.clearTimeout(timer);
+              try {
+                const scale = Math.min(2, Math.sqrt(16_000_000 / (block.width * block.height)));
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.ceil(block.width * scale);
+                canvas.height = Math.ceil(block.height * scale);
+                canvas.getContext("2d")!.drawImage(image, 0, 0, canvas.width, canvas.height);
+                const data = canvas.toDataURL("image/png");
+                if (data.length > 8_000_000) throw new Error("Visual capture exceeds the image size limit. Export a smaller conversation.");
+                resolve(data);
+              } catch { reject(new Error("Could not preserve a visual component. Retry with the chat fully loaded; no incomplete PDF was saved.")); }
+            };
+            image.onerror = () => {
+              window.clearTimeout(timer);
+              reject(new Error("Could not render a visual component. Retry with the chat fully loaded; no incomplete PDF was saved."));
+            };
+            image.src = svgUrl;
+          });
+          visualRasters.set(svgUrl, raster);
+        }
+        block.dataUrl = await raster;
+        totalVisualBytes += block.dataUrl.length;
+        if (totalVisualBytes > 64_000_000) throw new Error("Visual components exceed the export size limit. Export a smaller conversation.");
+        check();
+      }
+    }
+  }
+
   function blocksFor(element: HTMLElement, role: ConversationMessage["role"]): MessageBlock[] {
     const selector = provider === "gemini"
       ? (role === "user" ? ".query-text" : ".model-response-text, .markdown")
       : provider === "deepseek" ? ".ds-markdown, .fbb737a4"
       : ".markdown, .prose, [class*='markdown']";
-    const content = element.querySelector<HTMLElement>(selector) ?? element;
+    const content = element.querySelector<HTMLElement>("[data-dil-message-id]") ?? element.querySelector<HTMLElement>(selector) ?? element;
     let clone = content.cloneNode(true) as HTMLElement;
+    const visuals = new Map<string, MessageBlock>();
+    if (role === "assistant") {
+      const visualSelector = "[data-d-component='box'], [data-d-component='row'], [data-d-component='grid']";
+      const sources = [content, ...content.querySelectorAll("*")];
+      const copies = [clone, ...clone.querySelectorAll("*")];
+      const roots = [...(content.matches(visualSelector) ? [content] : []), ...content.querySelectorAll<HTMLElement>(visualSelector)].filter((node) => {
+        const parent = node.parentElement?.closest(visualSelector);
+        return !parent || !content.contains(parent);
+      });
+      for (const [index, node] of roots.entries()) {
+        if (!node.getClientRects().length) continue;
+        const id = String(index);
+        visuals.set(id, visualFor(node));
+        const placeholder = document.createElement("div");
+        placeholder.setAttribute("data-ai-chat-visual", id);
+        if (node === content) clone = placeholder;
+        else copies[sources.indexOf(node)].replaceWith(placeholder);
+      }
+    }
     if (provider === "chatgpt" && role === "user") {
       // Some ChatGPT layouts render the prompt itself as a button. Preserve
       // only that explicit content marker; ordinary action buttons still go.
@@ -165,6 +401,8 @@ export async function captureConversation(provider: Provider, options: CaptureOp
         return;
       }
       if (!(node instanceof HTMLElement)) return;
+      const visual = visuals.get(node.getAttribute("data-ai-chat-visual") ?? "");
+      if (visual) { blocks.push(visual); return; }
       if (node.tagName === "PRE") {
         const code = node.querySelector("code");
         const language = code?.className.match(/(?:^|\s)language-([^\s]+)/)?.[1];
@@ -190,7 +428,7 @@ export async function captureConversation(provider: Provider, options: CaptureOp
       const heading = node.tagName.match(/^H([1-6])$/);
       if (heading || node.matches("p,li,blockquote")) {
         // Leave compound content to the walker so code/tables are not flattened.
-        if (!node.querySelector("pre,table,.katex-display,img")) {
+        if (!node.querySelector("pre,table,.katex-display,img,[data-ai-chat-visual]")) {
           const text = inline(node).trim();
           if (text) blocks.push(heading
             ? { type: "heading", level: Number(heading[1]), text: (node.textContent ?? "").trim() }
@@ -346,6 +584,42 @@ export async function captureConversation(provider: Provider, options: CaptureOp
     return box && root.contains(box) ? box : turn;
   }
 
+  function mountedSpacing(before: HTMLElement, after: HTMLElement, root: HTMLElement): number {
+    function path(box: HTMLElement): HTMLElement[] {
+      const ancestors: HTMLElement[] = [];
+      let node: HTMLElement | null = box;
+      while (node) {
+        ancestors.push(node);
+        if (node === root) break;
+        node = node.parentElement;
+      }
+      return ancestors;
+    }
+    const beforePath = path(before);
+    const afterPath = path(after);
+    const common = beforePath.find((node) => afterPath.includes(node));
+    let spacing = 0;
+    for (const [ancestors, property] of [[beforePath, "marginBottom"], [afterPath, "marginTop"]] as const) {
+      for (const node of ancestors) {
+        if (node === common) break;
+        spacing += parseFloat(getComputedStyle(node)[property]) || 0;
+      }
+    }
+    if (common) {
+      const beforeChild = beforePath[beforePath.indexOf(common) - 1];
+      const afterChild = afterPath[afterPath.indexOf(common) - 1];
+      const style = getComputedStyle(common);
+      if (beforeChild && afterChild && /^(inline-)?flex$/.test(style.display) &&
+        style.flexDirection === "column" && style.flexWrap === "nowrap" &&
+        ![beforeChild, afterChild].some((child) => /^(absolute|fixed)$/.test(getComputedStyle(child).position))) {
+        let next = beforeChild.nextElementSibling;
+        while (next && getComputedStyle(next).display === "none") next = next.nextElementSibling;
+        if (next === afterChild) spacing += parseFloat(style.rowGap) || 0;
+      }
+    }
+    return spacing;
+  }
+
   // Full-DOM chats can be checked at both boundaries without walking every
   // viewport. Virtual windows leave uncovered geometry and take the normal path.
   function mountedAcrossScrollArea(): boolean {
@@ -354,7 +628,7 @@ export async function captureConversation(provider: Provider, options: CaptureOp
     if (!turns.length) return false;
     const area = mountedArea(turns);
     if (!area) return false;
-    const boxes = turns.map((turn) => mountedBox(turn, area.root));
+    const boxes = Array.from(new Set(turns.map((turn) => mountedBox(turn, area.root))));
     const commonParent = boxes[boxes.length - 1].parentElement;
     const commonStyle = commonParent && commonParent !== area.root && area.root.contains(commonParent) && boxes.every((turn) => commonParent.contains(turn))
       ? getComputedStyle(commonParent) : null;
@@ -362,15 +636,19 @@ export async function captureConversation(provider: Provider, options: CaptureOp
     const bottomPadding = area.paddingBottom + parentPadding;
     let coveredUntil = area.top;
     let previousMargin = area.paddingTop + (parseFloat(commonStyle?.paddingTop ?? "0") || 0);
+    let previousBox: HTMLElement | null = null;
     for (const element of boxes) {
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
       const top = rect.top - area.origin + scrollPosition();
       const bottom = rect.bottom - area.origin + scrollPosition();
       // Account only for declared spacing, never a missing viewport of turns.
-      if (top > coveredUntil + previousMargin + (parseFloat(style.marginTop) || 0) + 1 || bottom < coveredUntil) return false;
+      const spacing = previousBox ? mountedSpacing(previousBox, element, area.root)
+        : previousMargin + (parseFloat(style.marginTop) || 0);
+      if (top > coveredUntil + spacing + 1 || bottom < coveredUntil) return false;
       coveredUntil = bottom;
       previousMargin = parseFloat(style.marginBottom) || 0;
+      previousBox = element;
     }
     return coveredUntil >= area.bottom - bottomPadding - previousMargin - 1;
   }
@@ -422,8 +700,13 @@ export async function captureConversation(provider: Provider, options: CaptureOp
   }
 
   async function settle(boundary: boolean, phase: string, collect: boolean, beforeScroll?: string): Promise<void> {
-    let last = "";
-    let quietSince = Date.now();
+    // A final viewport check and the boundary check often observe the same DOM.
+    // Reuse that quiet time only while geometry/content still match. Queued
+    // DOM mutations or loading invalidate the interval carried from that check.
+    const reuseQuiet = settledMutationVersion === mutationVersion;
+    let last = reuseQuiet ? settledSignature : "";
+    let quietSince = reuseQuiet ? settledQuietSince : Date.now();
+    let reusedMutationVersion: number | null = reuseQuiet ? settledMutationVersion : null;
     const waitingSince = Date.now();
     for (;;) {
       check();
@@ -434,7 +717,11 @@ export async function captureConversation(provider: Provider, options: CaptureOp
       const windowReady = boundary ? (collect ? mountedEndCovered() : scrollPosition() > 1 || mountedStartCovered()) :
         beforeScroll === undefined || visible !== beforeScroll || mountedViewportCovered();
       const signature = `${scrollPosition()}:${scroller?.scrollHeight}:${area?.top}:${area?.bottom}:${area?.paddingTop}:${area?.paddingBottom}:${windowReady}:${visible}`;
-      if (signature !== last || loading()) quietSince = Date.now();
+      if (signature !== last || loading() ||
+        (reusedMutationVersion !== null && reusedMutationVersion !== mutationVersion)) {
+        quietSince = Date.now();
+        reusedMutationVersion = null;
+      }
       last = signature;
       // Rendered virtual windows may arrive asynchronously after a scroll.
       // Changed DOM can settle promptly; unchanged windows retain a 600 ms
@@ -449,6 +736,9 @@ export async function captureConversation(provider: Provider, options: CaptureOp
       if (windowReady && Date.now() - quietSince >= (boundary ? quietMs : Math.max(80, pollMs * 2)) &&
         Date.now() - waitingSince >= minimumWait) {
         if (collect && visible !== lastCapturedSignature) capture();
+        settledSignature = signature;
+        settledQuietSince = quietSince;
+        settledMutationVersion = mutationVersion;
         progress(phase);
         return;
       }
@@ -466,6 +756,7 @@ export async function captureConversation(provider: Provider, options: CaptureOp
 
   if (options.mode === "preview") {
     capture();
+    await rasterizeVisuals();
     return messages.length ? { status: "captured", conversation: conversation(), boundariesReached: false }
       : { status: "empty", message: `No visible ${config.name} messages found. Open a conversation and wait for it to load.` };
   }
@@ -501,6 +792,8 @@ export async function captureConversation(provider: Provider, options: CaptureOp
     scroller.style.setProperty("scroll-behavior", "auto", "important");
     // Native snap targets can clamp a requested scroll before either boundary.
     scroller.style.setProperty("scroll-snap-type", "none", "important");
+    mutationObserver = new MutationObserver(() => { mutationVersion++; });
+    mutationObserver.observe(scroller, { subtree: true, childList: true, characterData: true, attributes: true });
     progress("Finding first message");
     // No messages have been captured yet, so jumping to the start cannot lose
     // overlap. Lazy prepends can move the scroll position; settle and repeat.
@@ -534,6 +827,7 @@ export async function captureConversation(provider: Provider, options: CaptureOp
         if (scrollPosition() <= before && scrollPosition() < scrollEnd() - 1) throw new Error("Chat scrolling stopped before reaching the end. No incomplete file was saved.");
       }
     }
+    await rasterizeVisuals();
     return messages.length ? { status: "captured", conversation: conversation(), boundariesReached: true }
       : { status: "empty", message: `No ${config.name} messages found. This page layout may be unsupported.` };
   } catch (error) {
@@ -541,6 +835,7 @@ export async function captureConversation(provider: Provider, options: CaptureOp
     return message === "cancelled" ? { status: "cancelled", message: "Export cancelled. No file was saved." }
       : { status: "failed", message };
   } finally {
+    mutationObserver?.disconnect();
     if (scroller) {
       if (location.href === originalUrl) scroller.scrollTop = originalTop;
       if (originalBehavior) scroller.style.setProperty("scroll-behavior", originalBehavior, originalBehaviorPriority);
