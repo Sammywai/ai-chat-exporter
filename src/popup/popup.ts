@@ -7,7 +7,7 @@ import type { ExportFormat } from "../shared/protocol.js";
 const query = new URLSearchParams(location.search);
 const SETTINGS_KEY = "chat-archive.appearance";
 GlobalWorkerOptions.workerSrc = "./pdf.worker.js";
-document.body.classList.add("editor-mode");
+document.body.classList.add(query.get("mode") === "editor" ? "editor-mode" : "popup-mode");
 
 function element<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);

@@ -45,8 +45,8 @@ export function downloadFilename(title: string): string {
   return title.normalize("NFKC").replace(/[<>:"/\\|?*\u0000-\u001F]/g, " ").replace(/\s+/g, " ").trim().slice(0, 160).replace(/[. ]+$/g, "") || "ai-chat-export";
 }
 
-// Owned by the full extension page, not the transient popup or MV3 worker.
-// Captured data stays in memory until this workspace closes or rescans.
+// Owned by the export UI. Closing it cancels scanning through the owner lease.
+// Captured data stays in memory until the popup closes or rescans.
 export class ExportSession {
   captured: ConversationDraft | null = null;
   private jobId: string | null = null;

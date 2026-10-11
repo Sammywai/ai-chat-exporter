@@ -41,14 +41,6 @@ interface ChromeDownloadDelta {
 
 declare const chrome: {
   runtime: ChromeRuntime;
-  action: {
-    onClicked: { addListener(callback: (tab: ChromeTab) => void): void };
-    setTitle(details: { tabId: number; title: string }): Promise<void>;
-  };
-  sidePanel: {
-    setOptions(options: { tabId: number; path: string; enabled: boolean }): Promise<void>;
-    open(options: { tabId: number }): Promise<void>;
-  };
   tabs: {
     query(queryInfo: { active: boolean; currentWindow: boolean }): Promise<ChromeTab[]>;
     get(tabId: number): Promise<ChromeTab>;

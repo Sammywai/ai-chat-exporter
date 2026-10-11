@@ -6,7 +6,7 @@ AI Chat Exporter is designed to process conversation data locally.
 
 When you invoke the extension on a supported AI chat, it reads currently mounted conversation content and, during export, scrolls that tab to load earlier and later messages so it can create the requested PDF or Markdown file. This can include the conversation title, speaker roles, messages, headings, tables, code, and rendered visual components. Visual components can include button labels, visible progress, canvas contents, and other currently displayed states; they are preserved as static images in PDF and text in Markdown.
 
-Completed captures are held in the side panel's memory for retry or format changes. They are discarded when you rescan, reload, or close that panel; the extension does not persist a chat database. Progress events contain a job identifier, stage, and message count, and are sent only within the extension.
+Completed captures are held in the popup's memory for retry or format changes. They are discarded when you rescan, reload, or close that popup; the extension does not persist a chat database. Clicking elsewhere closes the popup. Closing it during a scan cancels that scan and restores the chat's scroll position. Progress events contain a job identifier, stage, and message count, and are sent only within the extension.
 
 PDF appearance preferences are stored in the extension's local browser storage. Generated files are saved through Chrome's download interface to a location you choose.
 
@@ -21,7 +21,7 @@ AI Chat Exporter does not include:
 - telemetry or crash reporting; or
 - code that sends conversation content to the project maintainer.
 
-Bundled PDF fonts are loaded from the installed extension package. No remote font service is used. The `sidePanel` permission displays export controls alongside the current chat; it does not grant additional site access.
+Bundled PDF fonts are loaded from the installed extension package. No remote font service is used. The extension uses only `activeTab`, `scripting`, and `downloads` permissions, with no permanent host permissions.
 
 Visual capture uses styles and pixels from the rendered page. Preparing a readable layout may cause the browser to reload resources already referenced by that page. Generated PNG snapshots contain pixels rather than external resource links. Images the browser cannot read appear as unavailable placeholders.
 

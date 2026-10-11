@@ -18,22 +18,6 @@ import type { PdfOptions } from "../shared/pdf-options.js";
 
 const PDF_DOWNLOAD_LIMIT_BYTES = 64 * 1024 * 1024;
 
-chrome.action.onClicked.addListener(tab => {
-  if (tab.id === undefined) return;
-  const tabId = tab.id;
-  // Submit the tab-specific path first, but invoke open in this click's stack:
-  // waiting for setOptions' response can discard the toolbar user gesture.
-  const options = chrome.sidePanel.setOptions({
-    tabId, path: `popup/index.html?mode=panel&sourceTabId=${tabId}`, enabled: true
-  });
-  const opened = chrome.sidePanel.open({ tabId });
-  void Promise.all([options, opened]).then(() => {
-    void chrome.action.setTitle({ tabId, title: "Export AI chat" });
-  }).catch(() => {
-    void chrome.action.setTitle({ tabId, title: "Could not open export panel. Reload the extension and retry." });
-  });
-});
-
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (isInspectCurrentConversationRequest(message)) {
     void inspectCurrentConversation(message.tabId)

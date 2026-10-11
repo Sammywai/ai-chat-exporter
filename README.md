@@ -2,18 +2,18 @@
 
 Keep AI conversations as readable PDF or Markdown files. One familiar ChatGPT-style layout, in light or dark. Everything runs on your device.
 
-<img src="docs/images/export-panel.png" alt="AI Chat Exporter: same-page side panel with format and appearance controls" width="360">
+<img src="docs/images/export-panel.png" alt="AI Chat Exporter: format and appearance controls" width="360">
 
 [Dark transcript sample](docs/images/transcript-dark.png) · [Light transcript sample](docs/images/transcript-light.png). Demo content is synthetic.
 
-**v0.4.2 beta.** Export controls stay beside your chat in Chrome's side panel. Capture and recovery are tested against synthetic browser fixtures, including newer ChatGPT message markers and delayed loading. See [verification](docs/VERIFICATION.md) for the separate live ChatGPT check and remaining provider qualification.
+**v0.4.2 beta.** Export controls open in a popup beneath the extension's toolbar icon. Capture and recovery are tested against synthetic browser fixtures, including newer ChatGPT message markers and delayed loading. See [verification](docs/VERIFICATION.md) for the separate live ChatGPT check and remaining provider qualification.
 
 ## What it does
 
 - Right-aligned user bubbles, plain assistant answers, bold headings, readable tables and code.
 - ChatGPT visual components retain their rendered cards, icons, colors, and button labels as static PDF images.
 - PDF or Markdown, with only Light/Dark appearance controls.
-- One panel alongside the current chat, with an optional appearance preview. Export does not open or navigate a browser tab.
+- One toolbar popup, with an optional appearance preview. Export does not open or navigate a browser tab.
 - Full-chat scanning with progress, cancellation, ordered capture, and scroll restoration.
 - Fast path for fully mounted conversations; overlapping scan for virtualized history.
 - Recognizes legacy and newer ChatGPT role markers, preserves prompt bubbles rendered as buttons, and retries briefly while visible messages load.
@@ -25,7 +25,7 @@ ChatGPT and Gemini are the primary capture fixtures. Claude, DeepSeek, Copilot, 
 
 ## Install
 
-Requires Node.js 22+ and Chrome or Chromium 116+ with the Side Panel API.
+Requires Node.js 22+ and Chrome or Chromium 116+.
 
 ```sh
 npm ci
@@ -34,15 +34,15 @@ npm test
 
 1. Open `chrome://extensions` and enable **Developer mode**.
 2. Click **Load unpacked**, then choose this project's `dist` folder.
-3. Open a supported chat and click the extension to open its side panel.
+3. Open a supported chat and click the extension to open its popup.
 
 After source changes, run `npm run build`, then reload the extension.
 
 ## Use
 
-Choose **PDF** or **Markdown** in the side panel. For PDF, choose **Light** or **Dark**. Click **Export**: the panel scans the conversation, then asks where to save. Your chat remains on the same tab.
+Choose **PDF** or **Markdown** in the popup. For PDF, choose **Light** or **Dark**. Click **Export**: the popup scans the conversation, then asks where to save. Your chat remains on the same tab.
 
-Keep the source chat and side panel open while scanning. **Cancel** stops scanning or PDF rendering. After capture, retry saving or change format without rescanning. **Rescan** discards the captured copy and reads newer messages. Closing or reloading the panel clears its in-memory capture.
+Keep the source chat and popup open while scanning. Clicking elsewhere closes the popup; closing it during a scan cancels that scan and restores the chat's scroll position. **Cancel** stops scanning or PDF rendering. After capture, retry saving or change format without rescanning while the popup remains open. **Rescan** discards the captured copy and reads newer messages. Closing or reloading the popup clears its in-memory capture.
 
 Expand **Preview appearance** to see the first page from currently visible messages. Export runs the full scan. Preview content is bounded and does not represent the entire conversation.
 
@@ -50,13 +50,13 @@ Expand **Preview appearance** to see the first page from currently visible messa
 
 Scanning checks both loaded scroll boundaries and message continuity. It cannot prove hidden branches, attachments, collapsed artifacts, or history that the site never mounts. Detected gaps fail explicitly instead of saving a known partial transcript.
 
-PDF preserves readable text, lists, tables, code, and links. ChatGPT's rendered visual components are captured as static images, including their layout, icons, colors, and button labels. Tall components continue across pages at readable scale. Their captured state remains fixed; buttons and animations are not interactive in PDF. Markdown retains their text. Ordinary images become descriptions; images inside visual components that the browser cannot read show an explicit unavailable placeholder. Math stays as TeX source. The panel uses the native system font, including Apple's system font on macOS. PDFs bundle Inter for a similar appearance, with Courier for code; conversations containing unsupported characters use a smaller static Regular instance of bundled Noto Sans SC instead. Fonts remain fully embedded to preserve visible glyphs. This layout follows ChatGPT's visual structure; pagination and fonts differ from the original web page.
+PDF preserves readable text, lists, tables, code, and links. ChatGPT's rendered visual components are captured as static images, including their layout, icons, colors, and button labels. Tall components continue across pages at readable scale. Their captured state remains fixed; buttons and animations are not interactive in PDF. Markdown retains their text. Ordinary images become descriptions; images inside visual components that the browser cannot read show an explicit unavailable placeholder. Math stays as TeX source. The popup uses the native system font, including Apple's system font on macOS. PDFs bundle Inter for a similar appearance, with Courier for code; conversations containing unsupported characters use a smaller static Regular instance of bundled Noto Sans SC instead. Fonts remain fully embedded to preserve visible glyphs. This layout follows ChatGPT's visual structure; pagination and fonts differ from the original web page.
 
 Capture limits: 10 minutes and 10,000 messages. PDF also applies content limits, a 64 MB output cap, and a 3-minute rendering deadline. Markdown can recover an oversized captured conversation.
 
 ## Permissions and privacy
 
-Only `activeTab`, `scripting`, `downloads`, and `sidePanel`. The side-panel permission keeps controls in the same window; no permanent host permissions. Chats stay in browser memory; nothing is sent to a project server. Appearance choice is stored locally. Details: [privacy](PRIVACY.md).
+Only `activeTab`, `scripting`, and `downloads`; no permanent host permissions. Chats stay in browser memory; nothing is sent to a project server. Appearance choice is stored locally. Details: [privacy](PRIVACY.md).
 
 ## Development
 
@@ -66,7 +66,7 @@ npm run build   # dist/
 npm test        # unit and integration regressions
 ```
 
-Real-browser scripts: `tests/capture-browser.mjs`, `tests/capture-scroll-browser.mjs`, `tests/capture-speed-browser.mjs`, `tests/rich-components-browser.mjs`, `tests/chatgpt-compat-browser.mjs`, `tests/extension-browser.mjs`, and `tests/side-panel-browser.mjs`. These additionally require Playwright and compatible Chromium. The rich-component suite also uses PDF.js's optional `@napi-rs/canvas` dependency, installed by a normal `npm ci`. Set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_EXECUTABLE` when using an existing installation. Extension integration uses isolated temporary profiles, synthetic conversations, and test-only host grants. See [verification](docs/VERIFICATION.md) for coverage and live-provider limits.
+Real-browser scripts: `tests/capture-browser.mjs`, `tests/capture-scroll-browser.mjs`, `tests/capture-speed-browser.mjs`, `tests/rich-components-browser.mjs`, `tests/chatgpt-compat-browser.mjs`, `tests/extension-browser.mjs`, and `tests/popup-browser.mjs`. These additionally require Playwright and compatible Chromium. The rich-component suite also uses PDF.js's optional `@napi-rs/canvas` dependency, installed by a normal `npm ci`. Set `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_EXECUTABLE` when using an existing installation. Extension integration uses isolated temporary profiles, synthetic conversations, and test-only host grants. See [verification](docs/VERIFICATION.md) for coverage and live-provider limits.
 
 ```text
 src/adapters/    Serialized capture engine and provider compatibility

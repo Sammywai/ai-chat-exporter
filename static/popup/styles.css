@@ -27,7 +27,7 @@ h1 { font-size: 20px; line-height: 1.35; font-weight: 600; margin: 0 0 7px; over
 .sample-answer strong { font-size: 15px; }
 .sample-answer p { margin: 9px 0; }
 .sample-caption { display: block; margin-top: 22px; color: var(--muted); font-size: 11px; }
-.document-preview { display: none; }
+.document-preview { display: block; }
 .markdown-workspace { background: var(--surface); padding: 28px 22px; border-radius: 14px; line-height: 1.7; }
 .markdown-workspace strong { font-size: 18px; }
 .markdown-workspace p { margin: 12px 0; }
@@ -42,15 +42,15 @@ h1 { font-size: 20px; line-height: 1.35; font-weight: 600; margin: 0 0 7px; over
 body[data-theme="light"] .status[data-state="error"] { color: #a82222; }
 .privacy-note { margin: 9px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
 body.editor-mode { width: 100%; min-width: 320px; min-height: 100vh; }
+body.popup-mode { width: 380px; min-width: 380px; max-height: 600px; overflow-y: auto; }
 .editor-mode .app { max-width: 520px; margin: 0 auto; padding: 22px 20px; }
 .editor-mode .app-header { margin-bottom: 24px; }
-.editor-mode .document-preview { display: block; }
 .document-preview summary { color: var(--muted); cursor: pointer; padding: 12px 0; font-size: 12px; }
 .preview-caption { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin: 24px 0 12px; gap: 12px; }
 .paper { position: relative; width: 100%; aspect-ratio: 595.28 / 841.89; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--paper); box-shadow: 0 4px 24px #0002; }
 #preview-document { width: 100%; height: auto; display: block; }
 .preview-loading { position: absolute; inset: 0; background: var(--paper); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; color: var(--muted); padding: 30px; text-align: center; }
-.editor-mode .export-bar { position: sticky; bottom: 0; background: var(--bg); padding: 18px 0 12px; }
+.editor-mode .export-bar, .popup-mode .export-bar { position: sticky; bottom: 0; background: var(--bg); padding: 18px 0 12px; }
 .editor-mode .status { text-align: left; }
 @media (max-width: 420px) { .editor-mode .app { padding: 22px 18px; } .editor-mode .status, .editor-mode .privacy-note { text-align: left; } .preview-caption { font-size: 11px; } }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }

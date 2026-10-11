@@ -2,18 +2,24 @@
 
 Beta qualification: synthetic tests do not certify every current live provider layout. Public fixtures and screenshots use synthetic conversation content. The scoped live ChatGPT check below includes a completed download and visual inspection.
 
+## Toolbar popup follow-up
+
+On 2026-10-11, toolbar invocation changed from Chrome's side panel to an action popup. TypeScript, the production build, all 82 Node regressions, and all 5 extension integration checks passed again. The native-popup suite passed 5 checks in headed Chrome for Testing 149.0.7827.55: an actual `POPUP` context resolves the active chat without URL parameters or additional tabs, stays 380 CSS px wide and at most 600 px high, saves PDF and Markdown with all 12 fixture anchors in order, fits the expanded PDF preview, and releases the capture lock and restores scroll when closed during an 80-message scan. Reopening starts a fresh ready popup.
+
+These checks use synthetic chats, temporary host grants, and automated download handling. They do not qualify a human toolbar `activeTab` grant, the operating-system Save As dialog's focus behavior, or new live-provider layouts. Clicking outside closes the popup; keep it open while scanning. Closing it discards its captured copy. Initial headless automation attempts failed; the successful native-popup run used Chrome 149 with a visible browser window.
+
 ## Current results
 
 | Check | Result | Coverage |
 | --- | --- | --- |
 | TypeScript | Pass | `npm run check` |
-| Node regressions | 82 pass | Provider adapters, inspection retries, navigation guards, capture sessions, download completion/failure/cancellation, PDF worker cancellation, PDF/Markdown rendering, embedded fonts, packaged licenses, toolbar routing, visual block validation and rendering |
+| Node regressions | 82 pass | Provider adapters, inspection retries, navigation guards, capture sessions, download completion/failure/cancellation, PDF worker cancellation, PDF/Markdown rendering, embedded fonts, packaged licenses, toolbar popup configuration, visual block validation and rendering |
 | Browser capture | 27 pass | Static and virtualized ChatGPT/Gemini fixtures, delayed history, repeated/updated messages, continuity gaps, duplicate IDs, stalls, timeout, navigation, cancellation, restored scrolling |
 | Scroll constraints | 17 pass | Native snapping, negative column-reverse ranges, shrinking endpoints, semantic transcript bounds, declared virtual canvases, incomplete-layout rejection, quiet intervals, exact scroll/style restoration |
 | Capture speed and layout | 7 pass | Reused quiet time with mutation/loading guards, paired user/assistant turn boxes, declared wrapper margins and column flex gaps, unknown spacer traversal, uncovered canvas-tail rejection |
 | Rich components | 8 pass | Preview/full PNG capture, component colors/icons/buttons/CJK, PDF raster output, narrow-source readable layout and restoration, reviewed SVG/canvas/transform/border edges, oversized visual pagination, streamed-word animations, intrinsic CJK labels and divider clipping |
 | Extension integration | 5 pass | Real injection into synthetic pages, delayed hydration, Blob downloads, retained captures, worker-rendered PDF, light/dark preview, responsive controls, owner cleanup |
-| Native side panel | 3 pass | Actual `SIDE_PANEL` document, correct source tab, PDF/Markdown downloads with all 12 ordered fixture anchors, completion confirmation, restored scroll, unchanged source URL and ordinary tab count |
+| Previous native side panel | 3 pass | Before the toolbar-popup change: actual `SIDE_PANEL` document, correct source tab, PDF/Markdown downloads with all 12 ordered fixture anchors, completion confirmation, restored scroll, unchanged source URL and ordinary tab count |
 
 Rich-component checks compare captured PNGs with source pixels. They cover SVG `defs`/`use`, local gradients and clip paths, canvas bitmap contents, child transforms, directional borders, a component that is itself the DIL content root, and an inline component surrounded by paragraph text. Response toolbars stay excluded. Oversized components retain top, middle, and bottom content across pages at readable width.
 
@@ -29,9 +35,9 @@ The following suite passed in the 2026-10-02 v0.4.1 validation. It was **not rer
 | --- | --- | --- |
 | ChatGPT compatibility | 7 pass | Legacy and newer role markers, prompt buttons, keyed div/list wrappers, ordered content and stable IDs |
 
-Browser checks use isolated profiles and synthetic pages. Extension suites add host grants only to disposable copies; the production manifest uses `activeTab`, `scripting`, `downloads`, and `sidePanel`, with no permanent host permissions. Native-panel tests use a trusted extension-frame gesture; they do not independently prove toolbar `activeTab` granting on every live account.
+Browser checks use isolated profiles and synthetic pages. Extension suites add host grants only to disposable copies; the production manifest uses `activeTab`, `scripting`, and `downloads`, with no permanent host permissions. Previous native-panel tests used a trusted extension-frame gesture; they do not independently prove toolbar `activeTab` granting on every live account.
 
-PDF raster checks cover bold headings and emphasis, code, tables, both palettes, and Chinese fallback glyphs. Inter Regular/Bold are fully embedded with ligatures disabled. The static Unicode fallback also disables localized glyph substitutions and ligatures so mixed Latin/CJK digits, color values, and original character sequences remain searchable. The mixed-text regression failed before this fix and passed afterward; a separate Poppler extraction and raster check also passed. The current isolated native-panel PDF contains all 12 fixture anchors in order. Full dependency and font license texts are included in the build.
+PDF raster checks cover bold headings and emphasis, code, tables, both palettes, and Chinese fallback glyphs. Inter Regular/Bold are fully embedded with ligatures disabled. The static Unicode fallback also disables localized glyph substitutions and ligatures so mixed Latin/CJK digits, color values, and original character sequences remain searchable. The mixed-text regression failed before this fix and passed afterward; a separate Poppler extraction and raster check also passed. The previous isolated native-panel PDF contains all 12 fixture anchors in order. Full dependency and font license texts are included in the build.
 
 ## Isolated release-candidate check
 
@@ -66,7 +72,7 @@ npm run check
 npm test
 ```
 
-Browser suites additionally require Playwright and compatible Chromium. `PLAYWRIGHT_MODULE` can identify an existing Playwright installation. `PLAYWRIGHT_EXECUTABLE` must identify a Chromium binary supporting unpacked extensions for the extension and side-panel suites.
+Browser suites additionally require Playwright and compatible Chromium. `PLAYWRIGHT_MODULE` can identify an existing Playwright installation. `PLAYWRIGHT_EXECUTABLE` must identify a Chromium binary supporting unpacked extensions for the extension and popup suites. The native-popup test uses `chrome.action.openPopup()` and requires Chrome 127+ for this test API; the extension itself retains Chrome 116 support.
 
 Current v0.4.2 browser checks:
 
@@ -76,7 +82,7 @@ node tests/capture-scroll-browser.mjs
 node tests/capture-speed-browser.mjs
 node tests/rich-components-browser.mjs
 node tests/extension-browser.mjs
-node tests/side-panel-browser.mjs
+PLAYWRIGHT_HEADED=1 node tests/popup-browser.mjs
 ```
 
 Previous compatibility check, available to rerun:

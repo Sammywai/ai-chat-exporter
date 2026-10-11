@@ -4,12 +4,15 @@ Install this build:
 1. Extract the ZIP into a folder you will keep.
 2. In Chrome, open chrome://extensions and turn on Developer mode.
 3. Click Load unpacked and select the folder containing manifest.json.
-4. Open an AI chat, click the extension to open its side panel, then choose PDF or Markdown.
+4. Open an AI chat, click the extension to open its popup, then choose PDF or Markdown.
 
-Requires Chrome/Chromium 116 or newer with the Side Panel API.
-Light/Dark change PDF appearance. Export stays beside the current chat.
-Keep chat and side panel open while scanning. Captured chats can be saved
-again or exported as Markdown after PDF failure. Rescan reads newer messages.
+Requires Chrome/Chromium 116 or newer.
+Light/Dark change PDF appearance. Export uses a toolbar popup.
+Keep chat and popup open while scanning. Clicking elsewhere closes the popup;
+closing it during a scan cancels that scan and restores the chat's scroll position.
+While the popup remains open, captured chats can be saved again or exported as
+Markdown after PDF failure. Closing the popup clears its captured copy.
+Rescan reads newer messages.
 
 This is a beta build. Synthetic browser tests do not certify every current
 live provider layout. Check known first, middle, and last messages in exports.

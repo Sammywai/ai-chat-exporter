@@ -1,43 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import { CONVERSATION_LIMITS } from "../dist/core/conversation.js";
 
-test("toolbar opens the tab-bound panel before its click gesture expires, even while options completion is pending", async () => {
+test("toolbar uses the native popup without side-panel APIs or opening a tab", async () => {
   const originalChrome = globalThis.chrome;
-  let onClick;
-  const calls = [];
-  let finishOptions;
-  let gesture = false;
-  const optionsCompletion = new Promise(resolve => { finishOptions = resolve; });
+  const manifest = JSON.parse(await readFile(new URL("../dist/manifest.json", import.meta.url), "utf8"));
+  assert.equal(manifest.action.default_popup, "popup/index.html");
+  assert.equal(manifest.side_panel, undefined);
+  assert.deepEqual(manifest.permissions, ["activeTab", "scripting", "downloads"]);
+  let messageListener;
   globalThis.chrome = {
-    action: {
-      onClicked: { addListener(listener) { onClick = listener; } },
-      setTitle: async options => calls.push(["title", options])
-    },
-    sidePanel: {
-      setOptions: options => { calls.push(["options", options]); return optionsCompletion; },
-      open: async options => {
-        if (!gesture) throw new Error("sidePanel.open() requires the current click gesture.");
-        calls.push(["open", options]);
-      }
-    },
-    runtime: { onMessage: { addListener() {} } },
+    runtime: { onMessage: { addListener(listener) { messageListener = listener; } } },
     tabs: { create() { throw new Error("Export must stay on the current tab."); } }
   };
   try {
-    await import(`../dist/background/service-worker.js?side-panel-${Date.now()}`);
-    gesture = true;
-    onClick({ id: 42, url: "https://chatgpt.com/c/synthetic" });
-    gesture = false;
-    const callsBeforeOptionsCompletion = calls.slice();
-    finishOptions();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(callsBeforeOptionsCompletion, [
-      ["options", { tabId: 42, path: "popup/index.html?mode=panel&sourceTabId=42", enabled: true }],
-      ["open", { tabId: 42 }]
-    ]);
-    assert.deepEqual(calls.at(-1), ["title", { tabId: 42, title: "Export AI chat" }], "Successful retry clears a stale failure title.");
+    await import(`../dist/background/service-worker.js?popup-${Date.now()}`);
+    assert.equal(typeof messageListener, "function", "Background messages remain available without toolbar routing.");
   } finally { globalThis.chrome = originalChrome; }
 });
 
